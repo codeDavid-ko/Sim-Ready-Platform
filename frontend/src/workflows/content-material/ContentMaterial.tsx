@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { API_BASE, downloadFile } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { API_BASE, blobUrl, downloadFile } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
 import type { WorkflowModuleProps } from "../registry";
 
@@ -11,6 +11,7 @@ type Result = {
   status: string;
   bindings: Record<string, string>;
   asset: AssetRec | null;
+  preview?: AssetRec | null;
   log_tail: string;
 };
 
@@ -24,6 +25,13 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  const [glbSrc, setGlbSrc] = useState<string | null>(null);
+  const glbRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    import("@google/model-viewer").catch(() => {});
+    return () => { if (glbRef.current) URL.revokeObjectURL(glbRef.current); };
+  }, []);
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -48,7 +56,16 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
         setError(d);
         return;
       }
-      setResult((await res.json()).result as Result);
+      const r = (await res.json()).result as Result;
+      setResult(r);
+      if (r.preview?.download_url) {
+        try {
+          const url = await blobUrl(r.preview.download_url);
+          if (glbRef.current) URL.revokeObjectURL(glbRef.current);
+          glbRef.current = url;
+          setGlbSrc(url);
+        } catch { setGlbSrc(null); }
+      }
     } catch {
       setError("백엔드에 연결할 수 없습니다(또는 시간 초과).");
     } finally {
@@ -74,6 +91,19 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
 
       {result && (
         <>
+          {glbSrc && (
+            <div className="card">
+              <label>결과 미리보기 (PBR 근사 · 색/금속성/거칠기)</label>
+              <model-viewer
+                src={glbSrc}
+                camera-controls
+                auto-rotate
+                shadow-intensity="1"
+                style={{ width: "100%", height: "320px", background: "#0d1117", borderRadius: "8px" }}
+              />
+              <p className="muted">정밀 MDL 룩은 Omniverse/Isaac에서, 여기선 PBR 근사입니다.</p>
+            </div>
+          )}
           <div className="card">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <label style={{ margin: 0 }}>부품별 추론 재질</label>

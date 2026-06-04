@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ...auth import require_auth
 from ...settings import get_settings
-from .. import registry
+from .. import registry, storage
 from ..content_material import handler as cm
 from ..material_usd import pipeline as mu
 
@@ -107,6 +107,16 @@ async def run(
             }
         )
 
+    # 나란히 3D 비교용 PBR GLB 미리보기 — A: material-usd, B: content-agents
+    preview_a = None
+    try:
+        glb_a = mu.preview_glb(data, name, in_units, up_axis, asg_a)
+        preview_a = storage.register_asset(
+            "material-compare", "material-usd preview", "material_usd_preview.glb", glb_a, {"engine": "material-usd"}
+        )
+    except Exception:  # noqa: BLE001
+        preview_a = None
+
     return {
         "ok": True,
         "input": name,
@@ -115,4 +125,6 @@ async def run(
         "rows": rows,
         "content_asset": res_b.get("asset"),
         "content_status": res_b.get("status"),
+        "preview_material_usd": preview_a,
+        "preview_content": res_b.get("preview"),
     }

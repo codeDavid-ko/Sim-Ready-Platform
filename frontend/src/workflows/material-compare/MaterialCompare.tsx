@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { API_BASE, downloadFile } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { API_BASE, blobUrl, downloadFile } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
 import type { WorkflowModuleProps } from "../registry";
 
@@ -18,6 +18,8 @@ type Result = {
   rows: Row[];
   content_asset: AssetRec | null;
   content_status: string;
+  preview_material_usd?: AssetRec | null;
+  preview_content?: AssetRec | null;
 };
 
 const WF = "material-compare";
@@ -31,6 +33,14 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  const [srcA, setSrcA] = useState<string | null>(null);
+  const [srcB, setSrcB] = useState<string | null>(null);
+  const refs = useRef<string[]>([]);
+
+  useEffect(() => {
+    import("@google/model-viewer").catch(() => {});
+    return () => { refs.current.forEach((u) => URL.revokeObjectURL(u)); };
+  }, []);
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -56,7 +66,20 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
         setError(d);
         return;
       }
-      setResult((await res.json()).result as Result);
+      const r = (await res.json()).result as Result;
+      setResult(r);
+      for (const [rec, set] of [
+        [r.preview_material_usd, setSrcA] as const,
+        [r.preview_content, setSrcB] as const,
+      ]) {
+        if (rec?.download_url) {
+          try {
+            const url = await blobUrl(rec.download_url);
+            refs.current.push(url);
+            set(url);
+          } catch { set(null); }
+        }
+      }
     } catch {
       setError("백엔드 연결 실패(또는 프록시 시간 초과 — 긴 작업).");
     } finally {
@@ -84,6 +107,26 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
 
       {result && (
         <>
+          {(srcA || srcB) && (
+            <div className="card">
+              <label>3D 비교 (PBR 근사 · 색/금속성/거칠기)</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <div className="muted" style={{ marginBottom: 4 }}>material-usd (vMaterials)</div>
+                  {srcA ? (
+                    <model-viewer src={srcA} camera-controls auto-rotate shadow-intensity="1" style={{ width: "100%", height: "280px", background: "#0d1117", borderRadius: "8px" }} />
+                  ) : <p className="muted">미리보기 없음</p>}
+                </div>
+                <div>
+                  <div className="muted" style={{ marginBottom: 4 }}>NVIDIA content-agents</div>
+                  {srcB ? (
+                    <model-viewer src={srcB} camera-controls auto-rotate shadow-intensity="1" style={{ width: "100%", height: "280px", background: "#0d1117", borderRadius: "8px" }} />
+                  ) : <p className="muted">미리보기 없음</p>}
+                </div>
+              </div>
+              <p className="muted" style={{ marginTop: 6 }}>두 엔진이 배정한 재질을 같은 형상 위에 PBR 근사로. 정밀 MDL 룩은 Omniverse/Isaac.</p>
+            </div>
+          )}
           <div className="card">
             <label>부품별 재질 비교 — {result.input} ({result.in_units}, {result.up_axis}-up)</label>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>

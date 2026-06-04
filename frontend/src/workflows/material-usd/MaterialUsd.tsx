@@ -52,7 +52,9 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
   const [addLight, setAddLight] = useState(true);
 
   // step 3
-  const [result, setResult] = useState<{ asset: AssetRec; info: any; usd_preview: string } | null>(null);
+  const [result, setResult] = useState<{ asset: AssetRec; preview?: AssetRec | null; info: any; usd_preview: string } | null>(null);
+  const [resultGlb, setResultGlb] = useState<string | null>(null);
+  const resultGlbRef = useRef<string | null>(null);
 
   const glbRef = useRef<string | null>(null);
 
@@ -140,6 +142,14 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       fd.append("add_light", String(addLight));
       const r = await postForm(`/api/workflows/${WF}/build`, fd);
       setResult(r);
+      if (r.preview?.download_url) {
+        try {
+          const url = await blobUrl(r.preview.download_url);
+          if (resultGlbRef.current) URL.revokeObjectURL(resultGlbRef.current);
+          resultGlbRef.current = url;
+          setResultGlb(url);
+        } catch { setResultGlb(null); }
+      }
       setStep(3);
     } catch (err) {
       setError(String((err as Error).message));
@@ -287,6 +297,19 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       {/* STEP 3 — result */}
       {step === 3 && result && (
         <>
+          {resultGlb && (
+            <div className="card">
+              <label>결과 미리보기 (PBR 근사 · 색/금속성/거칠기)</label>
+              <model-viewer
+                src={resultGlb}
+                camera-controls
+                auto-rotate
+                shadow-intensity="1"
+                style={{ width: "100%", height: "320px", background: "#0d1117", borderRadius: "8px" }}
+              />
+              <p className="muted">vMaterials MDL의 정밀 질감은 Omniverse/Isaac에서, 여기선 PBR 근사입니다.</p>
+            </div>
+          )}
           <div className="card">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <label style={{ margin: 0 }}>완료 — 재질 바인딩 USD</label>

@@ -208,6 +208,20 @@ async def classify(
 
 
 # ---------- [3] build ----------
+def preview_glb(
+    file_bytes: bytes,
+    file_name: str,
+    in_units: str,
+    up_axis: str,
+    assignment: dict[str, Any],
+) -> bytes:
+    """배정 결과를 브라우저 표시용 PBR GLB 로 (색/메탈릭/러프니스 근사)."""
+    from ..preview import glb_from_assignment_parts
+
+    parts = _load_normalized(file_bytes, file_name, in_units, up_axis)
+    return glb_from_assignment_parts(parts, assignment)
+
+
 def build(
     file_bytes: bytes,
     file_name: str,

@@ -112,9 +112,19 @@ async def build_ep(
     asset = storage.register_asset(
         _WF_ID, stem, f"{stem}.usda", usda, {"stage": "build", **info}
     )
+    # 브라우저 3D 미리보기용 PBR GLB (색/메탈릭/러프니스 근사)
+    preview = None
+    try:
+        glb = pipeline.preview_glb(data, file.filename or "model", in_units, up_axis, asg)
+        preview = storage.register_asset(
+            _WF_ID, f"{stem} (preview)", f"{stem}_preview.glb", glb, {"stage": "preview"}
+        )
+    except Exception:  # noqa: BLE001 -- preview is best-effort
+        preview = None
     return {
         "ok": True,
         "asset": asset,
+        "preview": preview,
         "info": info,
         "usd_preview": "\n".join(usda.decode("utf-8").splitlines()[:40]),
     }
