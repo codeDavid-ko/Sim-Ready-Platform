@@ -32,26 +32,23 @@ _MAX_FILE = 100 * 1024 * 1024  # 100MB
 @router.post("/render-submit")
 async def render_submit(
     asset_id: str = Form(...),
-    views: int = Form(6),
+    frames: int = Form(48),
     _gate: None = Depends(require_auth),
 ) -> dict[str, Any]:
-    """결과 USD(자기완결 vMaterials)를 Isaac Sim 으로 여러 각도 RTX 렌더 (잡).
-    GET /api/workflows/jobs/{job_id} 로 폴링 → {images:[asset...]}."""
+    """결과 USD(자기완결 vMaterials)를 Isaac Sim RTX 로 360° 회전 렌더 → mp4 (잡).
+    GET /api/workflows/jobs/{job_id} 로 폴링 → {video: asset}."""
     p = storage.asset_path(asset_id)
     if p is None:
         raise HTTPException(status_code=404, detail="에셋을 찾을 수 없습니다.")
     if not isaac.isaac_available():
         raise HTTPException(status_code=400, detail="Isaac Sim 이 이 머신에 설치돼 있지 않습니다.")
     usd_path = str(p)
-    nviews = max(1, min(int(views), 12))
+    nframes = max(8, min(int(frames), 120))
 
     def _job() -> dict[str, Any]:
-        imgs = isaac.render_usd_multiangle(usd_path, views=nviews)
-        recs = [
-            storage.register_asset(_WF_ID, f"isaac {name}", name, data, {"stage": "isaac-render"})
-            for name, data in imgs
-        ]
-        return {"images": recs, "count": len(recs)}
+        mp4 = isaac.render_turntable(usd_path, frames=nframes)
+        rec = storage.register_asset(_WF_ID, "turntable", "turntable.mp4", mp4, {"stage": "isaac-turntable"})
+        return {"video": rec}
 
     return {"job_id": jobs.submit(_job)}
 

@@ -27,7 +27,7 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
   const [result, setResult] = useState<Result | null>(null);
   const [glbSrc, setGlbSrc] = useState<string | null>(null);
   const glbRef = useRef<string | null>(null);
-  const [isaacImgs, setIsaacImgs] = useState<string[]>([]);
+  const [isaacVid, setIsaacVid] = useState<string | null>(null);
   const [isaacBusy, setIsaacBusy] = useState(false);
   const [isaacErr, setIsaacErr] = useState<string | null>(null);
   const isaacRefs = useRef<string[]>([]);
@@ -47,15 +47,14 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
     try {
       const fd = new FormData();
       fd.append("asset_id", result.usdz_asset.id);
-      fd.append("views", "6");
-      const r = await submitAndPoll<{ images: { download_url: string }[] }>(
+      const r = await submitAndPoll<{ video: { download_url: string } | null }>(
         `/api/workflows/${WF}/render-submit`, fd,
       );
-      const urls: string[] = [];
-      for (const im of r.images) {
-        try { const u = await blobUrl(im.download_url); isaacRefs.current.push(u); urls.push(u); } catch {}
+      if (r.video?.download_url) {
+        const u = await blobUrl(r.video.download_url);
+        isaacRefs.current.push(u);
+        setIsaacVid(u);
       }
-      setIsaacImgs(urls);
     } catch (err) {
       setIsaacErr(String((err as Error).message));
     } finally {
@@ -153,19 +152,15 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
           {result.usdz_asset && (
             <div className="card">
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <label style={{ margin: 0 }}>Omniverse 렌더 (여러 각도 · 실제 MaterialX)</label>
+                <label style={{ margin: 0 }}>Omniverse 렌더 (360° 회전 · 실제 MaterialX)</label>
                 <button className="ghost" onClick={runIsaac} disabled={isaacBusy}>
                   {isaacBusy ? "렌더 중… (Isaac Sim)" : "Omniverse로 렌더"}
                 </button>
               </div>
-              <p className="muted">결과를 USDZ로 묶어(형상+MaterialX+텍스처) Isaac Sim RTX로 여러 각도 렌더 — 실제 재질. (약 1분)</p>
+              <p className="muted">결과를 USDZ로 묶어(형상+MaterialX+텍스처) Isaac Sim RTX로 360° 회전 렌더 — 실제 재질. (약 1~2분)</p>
               {isaacErr && <p className="err">{isaacErr}</p>}
-              {isaacImgs.length > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
-                  {isaacImgs.map((u, i) => (
-                    <img key={i} src={u} alt={`omniverse ${i}`} style={{ width: "100%", borderRadius: 8, background: "#0d1117" }} />
-                  ))}
-                </div>
+              {isaacVid && (
+                <video src={isaacVid} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 8, background: "#0d1117" }} />
               )}
             </div>
           )}

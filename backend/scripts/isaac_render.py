@@ -21,6 +21,9 @@ parser.add_argument("--out", required=True)
 parser.add_argument("--views", type=int, default=6)
 parser.add_argument("--res", type=int, default=720)
 parser.add_argument("--settle", type=int, default=50, help="RTX 수렴용 프레임 수/뷰")
+parser.add_argument("--mp4", default="", help="주면 view_*.png 를 회전 mp4 로 stitch")
+parser.add_argument("--ffmpeg", default="", help="ffmpeg 실행경로(mp4 stitch용)")
+parser.add_argument("--fps", type=int, default=20)
 args = parser.parse_args()
 
 os.makedirs(args.out, exist_ok=True)
@@ -107,5 +110,21 @@ for i in range(n):
 for _ in range(10):
     simulation_app.update()
 log("DONE", len([p for p in saved if os.path.exists(p)]), "images ->", args.out)
+
+# 회전 mp4 stitch (옵션)
+if args.mp4 and args.ffmpeg and os.path.isfile(args.ffmpeg):
+    import subprocess
+    cmd = [
+        args.ffmpeg, "-y", "-framerate", str(args.fps),
+        "-i", os.path.join(args.out, "view_%d.png"),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        args.mp4,
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=120)
+        log("mp4", os.path.getsize(args.mp4) if os.path.exists(args.mp4) else 0, "->", args.mp4)
+    except Exception as e:
+        log("mp4_err", str(e)[:120])
+
 simulation_app.close()
 sys.exit(0)
