@@ -60,6 +60,41 @@ def render_turntable(usd_path: str, frames: int = 48, res: int = 720, timeout: i
         return f.read()
 
 
+def render_spin_frames(
+    usd_path: str, frames: int = 36, res: int = 540, timeout: int = 900
+) -> list[bytes]:
+    """USD/USDZ -> 360° 균등 분포 프레임 png 바이트 리스트(각도 순서대로).
+
+    브라우저 'object-movie' 스핀 뷰어용 — 마우스 드래그로 프레임을 넘겨 회전.
+    실제 RTX(MDL/MaterialX) 룩 그대로. view_<i>.png 를 i 숫자순으로 정렬한다."""
+    if not isaac_available():
+        raise RuntimeError("Isaac Sim(python.bat) 또는 렌더 스크립트를 찾을 수 없습니다.")
+    out = tempfile.mkdtemp(prefix="isaac_spin_")
+    cmd = [
+        _PYTHON_BAT, str(_SCRIPT),
+        "--usd", usd_path, "--out", out,
+        "--views", str(frames), "--res", str(res), "--settle", "10",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+    def _idx(p: str) -> int:
+        base = os.path.splitext(os.path.basename(p))[0]
+        try:
+            return int(base.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            return 0
+
+    paths = sorted(glob.glob(os.path.join(out, "view_*.png")), key=_idx)
+    data = []
+    for p in paths:
+        with open(p, "rb") as f:
+            data.append(f.read())
+    if not data:
+        tail = (proc.stdout or "")[-800:] + (proc.stderr or "")[-400:]
+        raise RuntimeError(f"스핀 프레임 렌더 산출 없음. 로그:\n{tail}")
+    return data
+
+
 def render_usd_multiangle(
     usd_path: str, views: int = 6, res: int = 720, timeout: int = 600
 ) -> list[tuple[str, bytes]]:

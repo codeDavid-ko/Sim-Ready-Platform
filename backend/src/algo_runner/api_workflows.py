@@ -11,11 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from .auth import require_auth
 from .workflows import jobs, registry, storage
+from .workflows.material_usd import isaac
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -31,6 +32,36 @@ def list_workflows(_gate: None = Depends(require_auth)) -> dict[str, Any]:
 def job_status(job_id: str, _gate: None = Depends(require_auth)) -> dict[str, Any]:
     """긴 워크플로우의 백그라운드 잡 상태/결과 (폴링용)."""
     return jobs.get(job_id)
+
+
+@router.post("/spin-submit")
+async def spin_submit(
+    asset_id: str = Form(...),
+    frames: int = Form(36),
+    res: int = Form(540),
+    _gate: None = Depends(require_auth),
+) -> dict[str, Any]:
+    """등록된 USD/USDZ 에셋을 Isaac RTX 로 360° 프레임 렌더(잡) → 브라우저 스핀 뷰어용.
+    GET /api/workflows/jobs/{job_id} 폴링 → {frames:[download_url...], count}.
+    모든 카드 공용(asset_id 만 주면 됨)."""
+    p = storage.asset_path(asset_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="에셋을 찾을 수 없습니다.")
+    if not isaac.isaac_available():
+        raise HTTPException(status_code=400, detail="Isaac Sim 이 이 머신에 설치돼 있지 않습니다.")
+    usd_path = str(p)
+    nframes = max(8, min(int(frames), 72))
+    r = max(256, min(int(res), 900))
+
+    def _job() -> dict[str, Any]:
+        imgs = isaac.render_spin_frames(usd_path, frames=nframes, res=r)
+        recs = [
+            storage.register_asset("spin", f"frame_{i}", f"spin_{i}.png", data, {"stage": "spin"})
+            for i, data in enumerate(imgs)
+        ]
+        return {"frames": [rec["download_url"] for rec in recs], "count": len(recs)}
+
+    return {"job_id": jobs.submit(_job)}
 
 
 @router.post("/{workflow_id}/run")

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
+import SpinViewer from "../SpinViewer";
 
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 type Result = {
@@ -168,6 +169,7 @@ export default function ContentTexture({ manifest }: WorkflowModuleProps) {
               {isaacVid && (
                 <video src={isaacVid} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 8, background: "#0d1117" }} />
               )}
+              <SpinViewer assetId={result.usdz_asset.id} label="🖱 인터랙티브 RTX 뷰어 (드래그로 회전)" />
             </div>
           )}
           {result.log_tail && (

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE, blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
 import type { WorkflowModuleProps } from "../registry";
+import SpinViewer from "../SpinViewer";
 
 type PartsJson = {
   input: string;
@@ -353,6 +354,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
             {isaacVid && (
               <video src={isaacVid} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 8, background: "#0d1117" }} />
             )}
+            {result.asset && <SpinViewer assetId={result.asset.id} label="🖱 인터랙티브 RTX 뷰어 (드래그로 회전)" />}
           </div>
           <div className="card">
             <div className="row" style={{ justifyContent: "space-between" }}>
