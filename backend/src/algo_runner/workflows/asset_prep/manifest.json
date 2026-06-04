@@ -1,0 +1,19 @@
+{
+  "id": "asset-prep",
+  "name": "에셋 준비",
+  "description": "3D 에셋을 sim-ready USD로 변환·검증·등록 (Z-up, meters, 충돌/리지드바디 부여)",
+  "icon": "📦",
+  "version": "1.0.0",
+  "requiredPermissions": [],
+  "entry": "asset-prep",
+  "io": {
+    "input": {
+      "file": {
+        "label": "3D 에셋 파일",
+        "accept": ".glb,.gltf,.obj,.stl,.ply",
+        "required": true
+      }
+    },
+    "output": ["download", "register", "report"]
+  }
+}

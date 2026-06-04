@@ -11,6 +11,9 @@ dependencies = [
     "winloop>=0.1; sys_platform == 'win32'",
     # Claude 를 쓸 때만 필요(안 쓰면 지워도 됨):
     "claude-agent-sdk>=0.1",
+    "usd-core>=26.5",
+    "trimesh>=4.12.2",
+    "numpy>=2.4.6",
 ]
 
 [dependency-groups]

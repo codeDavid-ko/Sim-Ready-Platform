@@ -12,7 +12,7 @@ if sys.platform == "win32":
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import api_admin, api_run, auth
+from . import api_admin, api_run, api_workflows, auth
 from .settings import get_settings
 
 
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(api_run.router)
+    app.include_router(api_workflows.router)
     app.include_router(api_admin.router)
     return app
 
