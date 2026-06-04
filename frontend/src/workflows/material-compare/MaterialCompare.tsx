@@ -45,7 +45,7 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("text", text);
-      const res = await fetch(`${API_BASE}/api/workflows/${WF}/run`, {
+      const res = await fetch(`${API_BASE}/api/workflows/${WF}/compare`, {
         method: "POST",
         headers: authHeaders(),
         body: fd,

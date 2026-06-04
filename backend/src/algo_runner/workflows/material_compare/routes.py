@@ -50,7 +50,7 @@ def _usd_units(file_bytes: bytes, ext: str) -> tuple[str, str]:
     return units, ("Z" if up.upper().startswith("Z") else "Y")
 
 
-@router.post("/run")
+@router.post("/compare")
 async def run(
     file: UploadFile = File(...),
     text: str = Form(""),
