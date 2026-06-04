@@ -85,14 +85,23 @@ def _compare_work(data: bytes, name: str, text: str) -> dict[str, Any]:
             }
         )
 
+    from pathlib import PurePath as _PP
+    stem = _PP(name).stem
+
     preview_a = None
+    render_a = None
     try:
         glb_a = mu.preview_glb(data, name, in_units, up_axis, asg_a)
         preview_a = storage.register_asset(
             "material-compare", "material-usd preview", "material_usd_preview.glb", glb_a, {"engine": "material-usd"}
         )
+        # Isaac 렌더용 자기완결 vMaterials USD
+        usda, _info = mu.build(data, name, in_units, up_axis, asg_a)
+        render_a = storage.register_asset(
+            "material-compare", "material-usd USD", f"{stem}_material_usd.usda", usda, {"engine": "material-usd"}
+        )
     except Exception:  # noqa: BLE001
-        preview_a = None
+        pass
 
     return {
         "ok": True,
@@ -104,6 +113,8 @@ def _compare_work(data: bytes, name: str, text: str) -> dict[str, Any]:
         "content_status": res_b.get("status"),
         "preview_material_usd": preview_a,
         "preview_content": res_b.get("preview"),
+        "render_material_usd": render_a,            # Isaac 렌더용(자기완결 vMaterials USD)
+        "render_content": res_b.get("usdz_asset"),  # Isaac 렌더용(content usdz)
     }
 
 

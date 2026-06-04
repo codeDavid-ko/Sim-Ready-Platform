@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ...auth import require_auth
-from .. import jobs, registry
+from .. import jobs, registry, storage
+from ..material_usd import isaac
 from . import handler
 
 router = APIRouter(tags=["content-material"])
@@ -31,3 +32,27 @@ async def submit(
     ctx = registry.WorkflowContext(workflow_id="content-material")
     job_id = jobs.submit(lambda: handler.run({}, data, name, ctx))
     return {"job_id": job_id}
+
+
+@router.post("/render-submit")
+async def render_submit(
+    asset_id: str = Form(...), views: int = Form(6), _gate: None = Depends(require_auth)
+) -> dict[str, Any]:
+    """자기완결 USDZ(content 결과)를 Isaac Sim 으로 멀티앵글 RTX 렌더 (잡)."""
+    p = storage.asset_path(asset_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="에셋을 찾을 수 없습니다.")
+    if not isaac.isaac_available():
+        raise HTTPException(status_code=400, detail="Isaac Sim 이 이 머신에 설치돼 있지 않습니다.")
+    usd_path = str(p)
+    nviews = max(1, min(int(views), 12))
+
+    def _job() -> dict[str, Any]:
+        imgs = isaac.render_usd_multiangle(usd_path, views=nviews)
+        recs = [
+            storage.register_asset("content-material", f"isaac {n}", n, d, {"stage": "isaac-render"})
+            for n, d in imgs
+        ]
+        return {"images": recs, "count": len(recs)}
+
+    return {"job_id": jobs.submit(_job)}

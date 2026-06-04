@@ -108,6 +108,22 @@ def run(
             )
         except Exception:  # noqa: BLE001 -- preview is best-effort
             preview = None
+        # 자기완결 USDZ(형상+MaterialX+텍스처 번들) → Windows Isaac 렌더용.
+        usdz = rundir / "output.usdz"
+        if usdz.exists():
+            try:
+                usdz_asset = ctx.register_asset(
+                    display_name=f"{stem} (usdz)",
+                    filename=f"{stem}.usdz",
+                    data=usdz.read_bytes(),
+                    meta={"stage": "usdz", "self_contained": True},
+                )
+            except Exception:  # noqa: BLE001
+                usdz_asset = None
+        else:
+            usdz_asset = None
+    else:
+        usdz_asset = None
     if asset is None:
         raise RuntimeError(
             f"출력 USD가 생성되지 않았습니다. status={status}.\n로그 마지막:\n{log_tail}"
@@ -119,5 +135,6 @@ def run(
         "bindings": bindings.get("bindings", {}),
         "asset": asset,
         "preview": preview,
+        "usdz_asset": usdz_asset,
         "log_tail": log_tail,
     }

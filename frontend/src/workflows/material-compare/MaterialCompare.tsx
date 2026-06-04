@@ -9,7 +9,7 @@ type Row = {
   material_usd: { key?: string; mdl?: string; subId?: string };
   content_agents?: string | null;
 };
-type AssetRec = { filename: string; bytes: number; download_url: string };
+type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 type Result = {
   input: string;
   in_units: string;
@@ -19,6 +19,8 @@ type Result = {
   content_status: string;
   preview_material_usd?: AssetRec | null;
   preview_content?: AssetRec | null;
+  render_material_usd?: AssetRec | null;
+  render_content?: AssetRec | null;
 };
 
 const WF = "material-compare";
@@ -35,11 +37,39 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
   const [srcA, setSrcA] = useState<string | null>(null);
   const [srcB, setSrcB] = useState<string | null>(null);
   const refs = useRef<string[]>([]);
+  // Omniverse 렌더 (양쪽)
+  const [omniA, setOmniA] = useState<string[]>([]);
+  const [omniB, setOmniB] = useState<string[]>([]);
+  const [omniBusy, setOmniBusy] = useState<"" | "A" | "B">("");
+  const [omniErr, setOmniErr] = useState<string | null>(null);
 
   useEffect(() => {
     import("@google/model-viewer").catch(() => {});
     return () => { refs.current.forEach((u) => URL.revokeObjectURL(u)); };
   }, []);
+
+  async function runOmni(assetId: string, which: "A" | "B") {
+    setOmniErr(null);
+    setOmniBusy(which);
+    try {
+      const fd = new FormData();
+      fd.append("asset_id", assetId);
+      fd.append("views", "6");
+      // material-usd 의 render-submit 은 asset_id 로 임의 등록 에셋을 Isaac 렌더한다(양쪽 공용)
+      const r = await submitAndPoll<{ images: { download_url: string }[] }>(
+        `/api/workflows/material-usd/render-submit`, fd,
+      );
+      const urls: string[] = [];
+      for (const im of r.images) {
+        try { const u = await blobUrl(im.download_url); refs.current.push(u); urls.push(u); } catch {}
+      }
+      (which === "A" ? setOmniA : setOmniB)(urls);
+    } catch (err) {
+      setOmniErr(String((err as Error).message));
+    } finally {
+      setOmniBusy("");
+    }
+  }
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -112,7 +142,42 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
                   ) : <p className="muted">미리보기 없음</p>}
                 </div>
               </div>
-              <p className="muted" style={{ marginTop: 6 }}>두 엔진이 배정한 재질을 같은 형상 위에 PBR 근사로. 정밀 MDL 룩은 Omniverse/Isaac.</p>
+              <p className="muted" style={{ marginTop: 6 }}>두 엔진이 배정한 재질을 같은 형상 위에 PBR 근사로. 정밀 MDL 룩은 아래 Omniverse 렌더.</p>
+            </div>
+          )}
+          {(result.render_material_usd || result.render_content) && (
+            <div className="card">
+              <label>Omniverse 렌더 (Isaac Sim RTX · 실제 재질 · 여러 각도)</label>
+              {omniErr && <p className="err">{omniErr}</p>}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <span className="muted">material-usd (vMaterials)</span>
+                    {result.render_material_usd && (
+                      <button className="ghost" onClick={() => runOmni(result.render_material_usd!.id, "A")} disabled={omniBusy !== ""}>
+                        {omniBusy === "A" ? "렌더 중…" : "Omniverse"}
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                    {omniA.map((u, i) => <img key={i} src={u} alt={`mu ${i}`} style={{ width: "100%", borderRadius: 6, background: "#0d1117" }} />)}
+                  </div>
+                </div>
+                <div>
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <span className="muted">NVIDIA content-agents</span>
+                    {result.render_content && (
+                      <button className="ghost" onClick={() => runOmni(result.render_content!.id, "B")} disabled={omniBusy !== ""}>
+                        {omniBusy === "B" ? "렌더 중…" : "Omniverse"}
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                    {omniB.map((u, i) => <img key={i} src={u} alt={`ct ${i}`} style={{ width: "100%", borderRadius: 6, background: "#0d1117" }} />)}
+                  </div>
+                </div>
+              </div>
+              <p className="muted" style={{ marginTop: 6 }}>각 ~수십 초~1분 (Isaac Sim 부팅+RTX). content는 결과를 usdz로 묶어 렌더.</p>
             </div>
           )}
           <div className="card">
