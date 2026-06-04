@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, blobUrl, downloadFile } from "@/lib/api";
+import { API_BASE, blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
 import type { WorkflowModuleProps } from "../registry";
 
@@ -55,6 +55,11 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
   const [result, setResult] = useState<{ asset: AssetRec; preview?: AssetRec | null; info: any; usd_preview: string } | null>(null);
   const [resultGlb, setResultGlb] = useState<string | null>(null);
   const resultGlbRef = useRef<string | null>(null);
+  // Omniverse(Isaac) 멀티앵글 렌더
+  const [isaacImgs, setIsaacImgs] = useState<string[]>([]);
+  const [isaacBusy, setIsaacBusy] = useState(false);
+  const [isaacErr, setIsaacErr] = useState<string | null>(null);
+  const isaacRefs = useRef<string[]>([]);
 
   const glbRef = useRef<string | null>(null);
 
@@ -158,10 +163,41 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
     }
   }
 
+  async function runIsaac() {
+    if (!result?.asset) return;
+    setIsaacErr(null);
+    setIsaacBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("asset_id", result.asset.id);
+      fd.append("views", "6");
+      const r = await submitAndPoll<{ images: { download_url: string }[] }>(
+        `/api/workflows/${WF}/render-submit`, fd,
+      );
+      const urls: string[] = [];
+      for (const im of r.images) {
+        try {
+          const u = await blobUrl(im.download_url);
+          isaacRefs.current.push(u);
+          urls.push(u);
+        } catch {}
+      }
+      setIsaacImgs(urls);
+    } catch (err) {
+      setIsaacErr(String((err as Error).message));
+    } finally {
+      setIsaacBusy(false);
+    }
+  }
+
   function reset() {
     setStep(0);
     setParts(null);
     setResult(null);
+    setIsaacImgs([]);
+    setIsaacErr(null);
+    isaacRefs.current.forEach((u) => URL.revokeObjectURL(u));
+    isaacRefs.current = [];
     setAssignmentText("");
     setLlmUsed(null);
     if (glbRef.current) {
@@ -310,6 +346,23 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
               <p className="muted">vMaterials MDL의 정밀 질감은 Omniverse/Isaac에서, 여기선 PBR 근사입니다.</p>
             </div>
           )}
+          <div className="card">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <label style={{ margin: 0 }}>Omniverse 렌더 (여러 각도 · 실제 vMaterials)</label>
+              <button className="ghost" onClick={runIsaac} disabled={isaacBusy}>
+                {isaacBusy ? "렌더 중… (Isaac Sim)" : "Omniverse로 렌더"}
+              </button>
+            </div>
+            <p className="muted">Isaac Sim 6.0 RTX로 결과 USD를 여러 각도에서 렌더 — PBR 근사가 아닌 실제 MDL 룩. (수십 초)</p>
+            {isaacErr && <p className="err">{isaacErr}</p>}
+            {isaacImgs.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
+                {isaacImgs.map((u, i) => (
+                  <img key={i} src={u} alt={`omniverse view ${i}`} style={{ width: "100%", borderRadius: 8, background: "#0d1117" }} />
+                ))}
+              </div>
+            )}
+          </div>
           <div className="card">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <label style={{ margin: 0 }}>완료 — 재질 바인딩 USD</label>

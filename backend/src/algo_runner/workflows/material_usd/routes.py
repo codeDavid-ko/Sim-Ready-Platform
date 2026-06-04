@@ -20,13 +20,40 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ...auth import require_auth
 from ...settings import get_settings
-from .. import storage
-from . import pipeline
+from .. import jobs, storage
+from . import isaac, pipeline
 
 router = APIRouter(tags=["material-usd"])
 
 _WF_ID = "material-usd"
 _MAX_FILE = 100 * 1024 * 1024  # 100MB
+
+
+@router.post("/render-submit")
+async def render_submit(
+    asset_id: str = Form(...),
+    views: int = Form(6),
+    _gate: None = Depends(require_auth),
+) -> dict[str, Any]:
+    """결과 USD(자기완결 vMaterials)를 Isaac Sim 으로 여러 각도 RTX 렌더 (잡).
+    GET /api/workflows/jobs/{job_id} 로 폴링 → {images:[asset...]}."""
+    p = storage.asset_path(asset_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="에셋을 찾을 수 없습니다.")
+    if not isaac.isaac_available():
+        raise HTTPException(status_code=400, detail="Isaac Sim 이 이 머신에 설치돼 있지 않습니다.")
+    usd_path = str(p)
+    nviews = max(1, min(int(views), 12))
+
+    def _job() -> dict[str, Any]:
+        imgs = isaac.render_usd_multiangle(usd_path, views=nviews)
+        recs = [
+            storage.register_asset(_WF_ID, f"isaac {name}", name, data, {"stage": "isaac-render"})
+            for name, data in imgs
+        ]
+        return {"images": recs, "count": len(recs)}
+
+    return {"job_id": jobs.submit(_job)}
 
 
 @router.post("/ingest")
