@@ -1,10 +1,11 @@
-"""material-compare 워크플로우 — 같은 USD를 두 재질추론 엔진에 모두 돌려 비교.
+"""material-compare — 같은 USD를 두 재질추론 엔진에 모두 돌려 비교.
 
-(A) material-usd  : 부품 메타데이터 + 구독 Claude(claude-agent-sdk) → vMaterials
+(A) material-usd  : 부품 메타데이터 + 구독 Claude → vMaterials
 (B) content-agents: 멀티뷰 렌더(Warp) + 구독 Claude VLM(anthropic_oauth, WSL) → 재질 라이브러리
 
-부품 이름으로 두 결과를 매칭해 나란히 반환한다. 두 파이프라인을 모두 돌리므로
-수 분 소요(특히 B). routes 기반(다단계) 워크플로우.
+두 엔진을 모두 돌리므로 수 분 소요. 브라우저 프록시 타임아웃을 피하려고
+잡 제출(/compare-submit -> job_id, GET /api/workflows/jobs/{id})을 기본으로 쓴다.
+직접 동기 호출용 /compare 도 유지.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ...auth import require_auth
 from ...settings import get_settings
-from .. import registry, storage
+from .. import jobs, registry, storage
 from ..content_material import handler as cm
 from ..material_usd import pipeline as mu
 
@@ -30,7 +31,6 @@ _MAX_FILE = 100 * 1024 * 1024
 
 
 def _usd_units(file_bytes: bytes, ext: str) -> tuple[str, str]:
-    """USD 의 metersPerUnit/upAxis 를 material-usd 의 in_units/up_axis 로 매핑."""
     from pxr import Usd, UsdGeom
 
     fd, p = tempfile.mkstemp(suffix=ext)
@@ -50,47 +50,29 @@ def _usd_units(file_bytes: bytes, ext: str) -> tuple[str, str]:
     return units, ("Z" if up.upper().startswith("Z") else "Y")
 
 
-@router.post("/compare")
-async def run(
-    file: UploadFile = File(...),
-    text: str = Form(""),
-    _gate: None = Depends(require_auth),
-) -> dict[str, Any]:
+def _compare_work(data: bytes, name: str, text: str) -> dict[str, Any]:
+    """두 엔진 실행 + 결과 병합 (동기; 잡 스레드/to_thread 에서 호출)."""
     s = get_settings()
-    data = await file.read()
-    if len(data) > _MAX_FILE:
-        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 100MB).")
-    name = file.filename or "asset.usd"
     ext = PurePath(name).suffix.lower()
-    if ext not in _SUPPORTED:
-        raise HTTPException(status_code=400, detail="USD 형식만 비교 가능합니다(두 엔진 공통 입력).")
-
     in_units, up_axis = _usd_units(data, ext)
 
-    # (A) material-usd — 부품 메타 + 구독 Claude → vMaterials
-    try:
-        parts_json, _glb = mu.ingest(data, name, in_units, up_axis)
-        asg_a = await mu.classify(
+    # (A) material-usd — classify 는 async → 이 스레드 전용 루프로 실행
+    parts_json, _glb = mu.ingest(data, name, in_units, up_axis)
+    asg_a = asyncio.run(
+        mu.classify(
             parts_json, "2", text, [], s.vmaterials_root,
             s.anthropic_api_key, s.claude_code_oauth_token, s.claude_model,
         )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"material-usd 오류: {exc}") from None
+    )
 
-    # (B) content-agents — 멀티뷰 렌더 + VLM (WSL, 동기 subprocess → 스레드)
+    # (B) content-agents — 동기(WSL subprocess)
     ctx_b = registry.WorkflowContext(workflow_id="content-material")
-    try:
-        res_b = await asyncio.to_thread(cm.run, {}, data, name, ctx_b)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"content-agents 오류: {exc}") from None
+    res_b = cm.run({}, data, name, ctx_b)
 
     a_parts = asg_a.get("parts", {})
     a_palette = asg_a.get("palette", {})
     b_bindings = res_b.get("bindings", {})
-
-    names = sorted(
-        {k for k in a_parts if k != "__default__"} | set(b_bindings.keys())
-    )
+    names = sorted({k for k in a_parts if k != "__default__"} | set(b_bindings.keys()))
     rows = []
     for part in names:
         key_a = a_parts.get(part) or a_parts.get("__default__")
@@ -98,16 +80,11 @@ async def run(
         rows.append(
             {
                 "part": part,
-                "material_usd": {
-                    "key": key_a,
-                    "mdl": spec_a.get("mdl"),
-                    "subId": spec_a.get("subId"),
-                },
+                "material_usd": {"key": key_a, "mdl": spec_a.get("mdl"), "subId": spec_a.get("subId")},
                 "content_agents": b_bindings.get(part),
             }
         )
 
-    # 나란히 3D 비교용 PBR GLB 미리보기 — A: material-usd, B: content-agents
     preview_a = None
     try:
         glb_a = mu.preview_glb(data, name, in_units, up_axis, asg_a)
@@ -128,3 +105,35 @@ async def run(
         "preview_material_usd": preview_a,
         "preview_content": res_b.get("preview"),
     }
+
+
+async def _read_validate(file: UploadFile) -> tuple[bytes, str]:
+    data = await file.read()
+    if len(data) > _MAX_FILE:
+        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 100MB).")
+    name = file.filename or "asset.usd"
+    if PurePath(name).suffix.lower() not in _SUPPORTED:
+        raise HTTPException(status_code=400, detail="USD 형식만 비교 가능합니다(두 엔진 공통 입력).")
+    return data, name
+
+
+@router.post("/compare-submit")
+async def compare_submit(
+    file: UploadFile = File(...), text: str = Form(""), _gate: None = Depends(require_auth)
+) -> dict[str, Any]:
+    """비교를 백그라운드 잡으로 제출 → {job_id}. (브라우저용 — 타임아웃 회피)"""
+    data, name = await _read_validate(file)
+    job_id = jobs.submit(lambda: _compare_work(data, name, text))
+    return {"job_id": job_id}
+
+
+@router.post("/compare")
+async def compare(
+    file: UploadFile = File(...), text: str = Form(""), _gate: None = Depends(require_auth)
+) -> dict[str, Any]:
+    """동기 비교(직접 호출용). 두 엔진 모두 끝날 때까지 대기."""
+    data, name = await _read_validate(file)
+    try:
+        return await asyncio.to_thread(_compare_work, data, name, text)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"compare 오류: {exc}") from None

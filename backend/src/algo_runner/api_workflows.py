@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from .auth import require_auth
-from .workflows import registry, storage
+from .workflows import jobs, registry, storage
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -25,6 +25,12 @@ _MAX_FILE = 100 * 1024 * 1024  # 100MB (3D 에셋 고려)
 @router.get("")
 def list_workflows(_gate: None = Depends(require_auth)) -> dict[str, Any]:
     return {"workflows": registry.list_manifests()}
+
+
+@router.get("/jobs/{job_id}")
+def job_status(job_id: str, _gate: None = Depends(require_auth)) -> dict[str, Any]:
+    """긴 워크플로우의 백그라운드 잡 상태/결과 (폴링용)."""
+    return jobs.get(job_id)
 
 
 @router.post("/{workflow_id}/run")

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, blobUrl, downloadFile } from "@/lib/api";
-import { authHeaders } from "@/lib/auth";
+import { blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
 
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
@@ -45,18 +44,7 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch(`${API_BASE}/api/workflows/${WF}/run`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: fd,
-      });
-      if (!res.ok) {
-        let d = `오류 (${res.status})`;
-        try { d = (await res.json()).detail ?? d; } catch {}
-        setError(d);
-        return;
-      }
-      const r = (await res.json()).result as Result;
+      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/submit`, fd);
       setResult(r);
       if (r.preview?.download_url) {
         try {
@@ -66,8 +54,8 @@ export default function ContentMaterial({ manifest }: WorkflowModuleProps) {
           setGlbSrc(url);
         } catch { setGlbSrc(null); }
       }
-    } catch {
-      setError("백엔드에 연결할 수 없습니다(또는 시간 초과).");
+    } catch (err) {
+      setError(String((err as Error).message));
     } finally {
       setBusy(false);
     }

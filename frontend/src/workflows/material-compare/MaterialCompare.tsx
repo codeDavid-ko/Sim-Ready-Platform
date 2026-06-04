@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, blobUrl, downloadFile } from "@/lib/api";
-import { authHeaders } from "@/lib/auth";
+import { blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
 
 type Row = {
@@ -55,18 +54,7 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("text", text);
-      const res = await fetch(`${API_BASE}/api/workflows/${WF}/compare`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: fd,
-      });
-      if (!res.ok) {
-        let d = `오류 (${res.status})`;
-        try { d = (await res.json()).detail ?? d; } catch {}
-        setError(d);
-        return;
-      }
-      const r = (await res.json()).result as Result;
+      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/compare-submit`, fd);
       setResult(r);
       for (const [rec, set] of [
         [r.preview_material_usd, setSrcA] as const,
@@ -80,8 +68,8 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
           } catch { set(null); }
         }
       }
-    } catch {
-      setError("백엔드 연결 실패(또는 프록시 시간 초과 — 긴 작업).");
+    } catch (err) {
+      setError(String((err as Error).message));
     } finally {
       setBusy(false);
     }
