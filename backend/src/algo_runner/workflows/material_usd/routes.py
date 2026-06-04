@@ -67,12 +67,23 @@ async def classify_ep(
     for im in images:
         imgs.append((await im.read(), im.content_type or "image/jpeg"))
     try:
-        asg = pipeline.classify(
-            parts_json, mode, text, imgs, s.vmaterials_root, s.anthropic_api_key, s.claude_model
+        asg = await pipeline.classify(
+            parts_json,
+            mode,
+            text,
+            imgs,
+            s.vmaterials_root,
+            s.anthropic_api_key,
+            s.claude_code_oauth_token,
+            s.claude_model,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"classify 오류: {exc}") from None
-    return {"ok": True, "assignment": asg, "llm_used": bool(s.anthropic_api_key)}
+    return {
+        "ok": True,
+        "assignment": asg,
+        "llm_used": bool(s.anthropic_api_key or s.claude_code_oauth_token),
+    }
 
 
 @router.post("/build")
@@ -81,6 +92,7 @@ async def build_ep(
     in_units: str = Form("m"),
     up_axis: str = Form("Y"),
     assignment: str = Form(...),
+    add_light: str = Form("true"),
     _gate: None = Depends(require_auth),
 ) -> dict[str, Any]:
     data = await file.read()
@@ -91,7 +103,9 @@ async def build_ep(
     except ValueError:
         raise HTTPException(status_code=400, detail="assignment 가 올바른 JSON 이 아닙니다.") from None
     try:
-        usda, info = pipeline.build(data, file.filename or "model", in_units, up_axis, asg)
+        usda, info = pipeline.build(
+            data, file.filename or "model", in_units, up_axis, asg, add_light=add_light.lower() == "true"
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"build 오류: {exc}") from None
     stem = PurePath(file.filename or "model").stem

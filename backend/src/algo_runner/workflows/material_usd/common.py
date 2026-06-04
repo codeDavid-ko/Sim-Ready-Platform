@@ -122,8 +122,23 @@ def _mesh_block(name, V, F, key, root_prim="Asset"):
     }}'''
 
 
-def write_usd_string(parts, part_to_key, palette, root_prim="Asset", recenter=True):
-    """parts(정규화됨) + (부품->재질키) + (재질키->vMaterials 사양) -> 자기완결 USDA 문자열."""
+_LIGHT_BLOCK = (
+    '\n    def DistantLight "DefaultLight"\n    {\n'
+    "        float inputs:intensity = 3000\n"
+    "        float inputs:angle = 0.53\n"
+    "        color3f inputs:color = (1, 1, 1)\n"
+    "        double3 xformOp:rotateXYZ = (-45, 0, 0)\n"
+    '        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]\n'
+    "    }\n"
+)
+
+
+def write_usd_string(parts, part_to_key, palette, root_prim="Asset", recenter=True, add_light=True):
+    """parts(정규화됨) + (부품->재질키) + (재질키->vMaterials 사양) -> 자기완결 USDA 문자열.
+
+    add_light=True 면 Isaac Sim 등에서 바로 보이도록 기본 DistantLight 를 포함한다
+    (라이트 없는 씬 경고 방지). 에셋 라이브러리로 참조할 땐 False 로 끌 수 있다.
+    """
     allV = np.vstack([V for _, V, _ in parts])
     mn, mx = allV.min(0), allV.max(0)
     cx, cy, bz = (mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, mn[2]
@@ -145,6 +160,7 @@ def write_usd_string(parts, part_to_key, palette, root_prim="Asset", recenter=Tr
         f'    metersPerUnit = 0.001\n    upAxis = "Z"\n)\n\n'
         f'def Xform "{root_prim}"\n{{\n    def Scope "Materials"\n    {{\n{mats}\n    }}\n'
         + "\n".join(meshes)
+        + (_LIGHT_BLOCK if add_light else "")
         + "\n}\n"
     )
     info = {

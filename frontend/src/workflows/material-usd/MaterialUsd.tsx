@@ -49,6 +49,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
 
   // step 2
   const [assignmentText, setAssignmentText] = useState("");
+  const [addLight, setAddLight] = useState(true);
 
   // step 3
   const [result, setResult] = useState<{ asset: AssetRec; info: any; usd_preview: string } | null>(null);
@@ -136,6 +137,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       fd.append("in_units", inUnits);
       fd.append("up_axis", upAxis);
       fd.append("assignment", JSON.stringify(asg));
+      fd.append("add_light", String(addLight));
       const r = await postForm(`/api/workflows/${WF}/build`, fd);
       setResult(r);
       setStep(3);
@@ -249,7 +251,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
             )}
             <label>설명 텍스트 {mode === "2" ? "(부품별 설명)" : "(선택)"}</label>
             <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="예: 효성 크림색 제어 캐비닛, 도어는 살짝 밝게" />
-            <p className="muted">API 키가 없으면 기본 팔레트로 폴백합니다(검수 단계에서 직접 수정 가능).</p>
+            <p className="muted">Claude 자격증명(구독 토큰 `CLAUDE_CODE_OAUTH_TOKEN` 또는 API 키)이 있으면 LLM이 부품별 재질을 분류하고, 둘 다 없으면 기본 팔레트로 폴백합니다(어느 경우든 검수 단계에서 직접 수정 가능).</p>
             <div className="row" style={{ marginTop: 12 }}>
               <button type="submit" disabled={busy}>{busy ? "분류 중…" : "재질 분류 (classify)"}</button>
               <button type="button" className="ghost" onClick={() => setStep(0)}>← 이전</button>
@@ -263,7 +265,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
         <div className="card">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <label style={{ margin: 0 }}>assignment 검수 (수정 가능)</label>
-            <span className={`badge ${llmUsed ? "ok" : "warn"}`}>{llmUsed ? "LLM 분류" : "기본 팔레트(키 없음)"}</span>
+            <span className={`badge ${llmUsed ? "ok" : "warn"}`}>{llmUsed ? "LLM 분류" : "기본 팔레트(자격증명 없음)"}</span>
           </div>
           <textarea
             rows={14}
@@ -271,6 +273,10 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
             onChange={(e) => setAssignmentText(e.target.value)}
             style={{ fontFamily: "monospace", fontSize: 12.5 }}
           />
+          <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400, marginTop: 10 }}>
+            <input type="checkbox" checked={addLight} onChange={(e) => setAddLight(e.target.checked)} style={{ width: "auto" }} />
+            USD에 기본 라이트(DistantLight) 포함 — Isaac Sim에서 바로 보이게
+          </label>
           <div className="row" style={{ marginTop: 12 }}>
             <button type="button" onClick={runBuild} disabled={busy}>{busy ? "USD 생성 중…" : "USD 생성 (build)"}</button>
             <button type="button" className="ghost" onClick={() => setStep(1)}>← 분류 다시</button>
