@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import api_admin, api_run, api_workflows, auth
 from .settings import get_settings
+from .workflows import registry
 
 
 def create_app() -> FastAPI:
@@ -34,6 +35,11 @@ def create_app() -> FastAPI:
     app.include_router(api_run.router)
     app.include_router(api_workflows.router)
     app.include_router(api_admin.router)
+
+    # 다단계 워크플로우가 노출하는 자체 라우터를 /api/workflows/{id} 로 마운트
+    for wf_id, wf_router in registry.routers():
+        app.include_router(wf_router, prefix=f"/api/workflows/{wf_id}")
+
     return app
 
 

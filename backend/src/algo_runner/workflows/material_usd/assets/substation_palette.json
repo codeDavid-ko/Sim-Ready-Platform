@@ -1,0 +1,12 @@
+{
+  "_comment": "변전소 기본 팔레트 (가이드 §9.4). vmat_root는 런타임 주입. classify가 없을 때 폴백/기본값으로 사용.",
+  "gis_chamber": {"mdl":"Metal/Steel_Painted.mdl","subId":"Steel_Painted","inputs":{"paint_color":[0.72,0.70,0.66],"paint_roughness":0.35}},
+  "pipe":        {"mdl":"Metal/Steel_Painted.mdl","subId":"Steel_Painted","inputs":{"paint_color":[0.72,0.70,0.66],"paint_roughness":0.35}},
+  "cabinet":     {"mdl":"Metal/Steel_Painted.mdl","subId":"Steel_Painted","inputs":{"paint_color":[0.76,0.73,0.66],"paint_roughness":0.40}},
+  "porcelain":   {"mdl":"Metal/Copper_Brushed.mdl","subId":"Copper_Brushed","inputs":{}},
+  "pillar":      {"mdl":"Metal/Steel_Galvanized.mdl","subId":"Steel_Galvanized","inputs":{}},
+  "bellow":      {"mdl":"Metal/Stainless_Steel.mdl","subId":"Stainless_Steel","inputs":{}},
+  "concrete":    {"mdl":"Concrete/Concrete_Rough.mdl","subId":"Concrete_Rough","inputs":{}},
+  "floor_walk":  {"mdl":"Concrete/Concrete_Precast.mdl","subId":"Concrete_Precast","inputs":{}},
+  "wall":        {"mdl":"Plaster/Stucco.mdl","subId":"Stucco","inputs":{}}
+}

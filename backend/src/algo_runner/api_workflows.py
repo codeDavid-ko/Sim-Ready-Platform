@@ -37,6 +37,11 @@ async def run_workflow(
     wf = registry.get(workflow_id)
     if wf is None:
         raise HTTPException(status_code=404, detail=f"워크플로우를 찾을 수 없습니다: {workflow_id}")
+    if wf.handler is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"이 워크플로우는 원샷 실행을 제공하지 않습니다(자체 엔드포인트 사용): {workflow_id}",
+        )
 
     form = await request.form()
     params: dict[str, Any] = {

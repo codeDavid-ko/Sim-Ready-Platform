@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import AssetPrep from "./asset-prep/AssetPrep";
 import SampleSum from "./sample-sum/SampleSum";
+import MaterialUsd from "./material-usd/MaterialUsd";
 
 // 백엔드 manifest.json 과 같은 모양 (셸은 이것만 알고 내부는 모른다).
 export type WorkflowManifest = {
@@ -25,4 +26,5 @@ export type WorkflowModuleProps = {
 export const MODULES: Record<string, ComponentType<WorkflowModuleProps>> = {
   "asset-prep": AssetPrep,
   "sample-sum": SampleSum,
+  "material-usd": MaterialUsd,
 };

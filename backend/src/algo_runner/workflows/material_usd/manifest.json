@@ -1,0 +1,19 @@
+{
+  "id": "material-usd",
+  "name": "재질 추론 USD",
+  "description": "STL/STEP/USD를 올리고, 이미지/설명으로 부품별 재질(vMaterials)을 추론해 재질 바인딩된 자기완결 USD를 생성 (ingest→classify→build 단계형).",
+  "icon": "🎨",
+  "version": "1.0.0",
+  "requiredPermissions": [],
+  "entry": "material-usd",
+  "multistep": true,
+  "io": {
+    "input": {
+      "file": { "label": "3D 형상 (STL/STEP/USD/GLB)", "accept": ".stl,.step,.stp,.usd,.usda,.usdc,.usdz,.glb,.gltf,.obj,.ply", "required": true },
+      "mode": { "1": "전체 이미지 + 부품 이름", "2": "부품별 텍스트 설명" },
+      "images": "참조 이미지(모드 1)",
+      "text": "참조 설명"
+    },
+    "output": ["viewer-glb", "assignment", "usd-download", "register"]
+  }
+}

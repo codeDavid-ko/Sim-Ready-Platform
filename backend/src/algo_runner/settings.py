@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     claude_code_oauth_token: str = ""
     claude_model: str = "claude-opus-4-8"
 
+    # material-usd 워크플로우: NVIDIA vMaterials 설치 경로(빌드 시 MDL 참조). 비우면 뷰어에서 핑크/검정.
+    vmaterials_root: str = ""
+
     def cors_origins(self) -> list[str]:
         items = [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
         return items or ["http://localhost:3000"]

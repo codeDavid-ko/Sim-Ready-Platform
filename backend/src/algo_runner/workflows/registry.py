@@ -1,11 +1,11 @@
 """매니페스트 기반 워크플로우 레지스트리 (규약 v1).
 
-이 패키지 밑의 각 하위 폴더에서 `manifest.json` + `handler.py`(run 함수)를 찾아
-자동 등록한다. 셸은 매니페스트만 읽어 카드를 그리고, 실행 시 handler.run 을 호출한다.
+이 패키지 밑의 각 하위 폴더에서 `manifest.json` 을 찾아 자동 등록한다.
+워크플로우는 다음 중 하나(또는 둘 다)를 가질 수 있다:
+  - `handler.py` 의 `run(params, file_bytes, file_name, ctx) -> dict`  (원샷 워크플로우)
+  - `routes.py` 의 `router`(APIRouter)                                 (다단계/자체 엔드포인트)
 
-handler.run 시그니처:
-    run(params: dict, file_bytes: bytes | None, file_name: str | None,
-        ctx: WorkflowContext) -> dict   # JSON 직렬화 가능한 dict
+셸은 매니페스트만 읽어 카드를 그린다. 내부 구현(원샷이냐 다단계냐)은 모른다.
 """
 
 from __future__ import annotations
@@ -38,7 +38,8 @@ class WorkflowContext:
 @dataclass
 class Workflow:
     manifest: dict[str, Any]
-    handler: HandlerFn
+    handler: HandlerFn | None = None  # 원샷 워크플로우
+    router: Any = None               # 다단계 워크플로우(APIRouter)
 
     @property
     def id(self) -> str:
@@ -52,9 +53,18 @@ def _discover() -> dict[str, Workflow]:
         if not child.is_dir() or not manifest_file.exists():
             continue
         manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-        module = importlib.import_module(f"{__package__}.{child.name}.handler")
-        handler = getattr(module, "run")
-        found[str(manifest["id"])] = Workflow(manifest=manifest, handler=handler)
+
+        handler = None
+        if (child / "handler.py").exists():
+            module = importlib.import_module(f"{__package__}.{child.name}.handler")
+            handler = getattr(module, "run", None)
+
+        router = None
+        if (child / "routes.py").exists():
+            rmod = importlib.import_module(f"{__package__}.{child.name}.routes")
+            router = getattr(rmod, "router", None)
+
+        found[str(manifest["id"])] = Workflow(manifest=manifest, handler=handler, router=router)
     return found
 
 
@@ -74,3 +84,8 @@ def list_manifests() -> list[dict[str, Any]]:
 
 def get(workflow_id: str) -> Workflow | None:
     return all_workflows().get(workflow_id)
+
+
+def routers() -> list[tuple[str, Any]]:
+    """(workflow_id, APIRouter) 목록 — main 이 /api/workflows/{id} 프리픽스로 마운트."""
+    return [(wf.id, wf.router) for wf in all_workflows().values() if wf.router is not None]

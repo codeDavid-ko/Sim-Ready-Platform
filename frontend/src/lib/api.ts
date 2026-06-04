@@ -12,6 +12,13 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+// 인증 헤더로 받아 object URL 로 돌려준다(뷰어 src 등). 호출측에서 revoke 책임.
+export async function blobUrl(path: string): Promise<string> {
+  const res = await fetch(`${API_BASE}${path}`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error(`${path} ${res.status}`);
+  return URL.createObjectURL(await res.blob());
+}
+
 // 다운로드는 <a href> 로는 토큰을 못 실으므로 fetch + Authorization 후 blob 으로 저장한다.
 export async function downloadFile(path: string, filename: string): Promise<void> {
   const res = await fetch(`${API_BASE}${path}`, { headers: { ...authHeaders() } });
