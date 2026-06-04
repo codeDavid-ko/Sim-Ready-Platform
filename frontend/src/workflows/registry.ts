@@ -3,6 +3,8 @@ import AssetPrep from "./asset-prep/AssetPrep";
 import SampleSum from "./sample-sum/SampleSum";
 import MaterialUsd from "./material-usd/MaterialUsd";
 import ContentMaterial from "./content-material/ContentMaterial";
+import ContentPhysics from "./content-physics/ContentPhysics";
+import ContentTexture from "./content-texture/ContentTexture";
 import MaterialCompare from "./material-compare/MaterialCompare";
 
 // 백엔드 manifest.json 과 같은 모양 (셸은 이것만 알고 내부는 모른다).
@@ -30,5 +32,7 @@ export const MODULES: Record<string, ComponentType<WorkflowModuleProps>> = {
   "sample-sum": SampleSum,
   "material-usd": MaterialUsd,
   "content-material": ContentMaterial,
+  "content-physics": ContentPhysics,
+  "content-texture": ContentTexture,
   "material-compare": MaterialCompare,
 };
