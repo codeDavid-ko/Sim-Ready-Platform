@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiJson, blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
+import SpinViewer from "../SpinViewer";
 
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 type Row = {
@@ -97,6 +98,7 @@ export default function TrinixSimready({ manifest }: WorkflowModuleProps) {
               <model-viewer src={glbSrc} camera-controls auto-rotate shadow-intensity="1"
                 style={{ width: "100%", height: "360px", background: "#0d1117", borderRadius: "8px" }} />
               <p className="muted">{result.engine}</p>
+              {result.material_asset && <SpinViewer assetId={result.material_asset.id} label="🖱 인터랙티브 RTX 뷰어 (실제 재질 · 드래그 회전)" />}
             </div>
           )}
           <div className="card">

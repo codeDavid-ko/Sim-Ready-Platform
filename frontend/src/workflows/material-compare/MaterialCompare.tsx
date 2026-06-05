@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
+import SpinViewer from "../SpinViewer";
 
 type Row = {
   part: string;
@@ -168,6 +169,7 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
                     )}
                   </div>
                   {omniA && <video src={omniA} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 6, background: "#0d1117", marginTop: 6 }} />}
+                  {result.render_material_usd && <SpinViewer assetId={result.render_material_usd.id} label="🖱 인터랙티브 RTX (드래그 회전)" />}
                 </div>
                 <div>
                   <div className="row" style={{ justifyContent: "space-between" }}>
@@ -179,6 +181,7 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
                     )}
                   </div>
                   {omniB && <video src={omniB} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 6, background: "#0d1117", marginTop: 6 }} />}
+                  {result.render_content && <SpinViewer assetId={result.render_content.id} label="🖱 인터랙티브 RTX (드래그 회전)" />}
                 </div>
               </div>
               <p className="muted" style={{ marginTop: 6 }}>각 ~수십 초~1분 (Isaac Sim 부팅+RTX). content는 결과를 usdz로 묶어 렌더.</p>
