@@ -212,7 +212,19 @@ def author_usd(meshes: list[dict], joints: list[dict[str, Any]]) -> tuple[bytes,
         authored.append({"name": f"joint_{i}", "type": jtype, "axis": axis,
                          "parent": parent or "(world)", "child": child, "lower": lo, "upper": hi})
 
-    return stage.GetRootLayer().ExportToString().encode("utf-8"), authored
+    # .usd(바이너리 crate)로 내보내기 — 텍스트(.usda)보다 작고 빠름. 자기완결.
+    fd, outp = tempfile.mkstemp(suffix=".usd")
+    os.close(fd)
+    try:
+        stage.Export(outp)
+        with open(outp, "rb") as f:
+            data = f.read()
+    finally:
+        try:
+            os.remove(outp)
+        except OSError:
+            pass
+    return data, authored
 
 
 def viewer_glb(meshes: list[dict]) -> bytes:

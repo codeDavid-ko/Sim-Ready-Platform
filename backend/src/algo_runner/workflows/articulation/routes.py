@@ -56,6 +56,6 @@ async def build(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"build 오류: {exc}") from None
     stem = PurePath(name).stem
-    asset = storage.register_asset(_WF_ID, stem, f"{stem}_articulated.usda", usda,
+    asset = storage.register_asset(_WF_ID, stem, f"{stem}_articulated.usd", usda,
                                    {"stage": "usd", "joints": len(authored)})
     return {"ok": True, "asset": asset, "joints": authored}
