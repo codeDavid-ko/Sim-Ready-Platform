@@ -48,23 +48,31 @@ async def submit(
     prompt = text.strip()
 
     def _job() -> dict[str, Any]:
-        res = pipeline.build_stl(imgs, prompt)
+        res = pipeline.build_step(imgs, prompt)
         ctx = registry.WorkflowContext(_WF_ID)
-        stl = res["stl_bytes"]
-        stl_asset = ctx.register_asset(
-            display_name="trinix model", filename="model.stl", data=stl,
-            meta={"engine": "trinix-cad", "source_text": prompt[:200]},
+        step = res["step_bytes"]
+        step_asset = ctx.register_asset(
+            display_name="trinix model", filename="model.step", data=step,
+            meta={"engine": "trinix-cad", "source_text": prompt[:200], "parts_preserved": True},
         )
-        preview = None
+        stl_asset = preview = None
+        try:
+            stl_asset = ctx.register_asset(
+                display_name="trinix model (stl)", filename="model.stl",
+                data=pipeline.merged_stl(step), meta={"stage": "stl-merged"},
+            )
+        except Exception:  # noqa: BLE001
+            stl_asset = None
         try:
             preview = ctx.register_asset(
                 display_name="model preview", filename="model.glb",
-                data=pipeline.preview_glb(stl), meta={"stage": "preview"},
+                data=pipeline.preview_glb(step), meta={"stage": "preview"},
             )
         except Exception:  # noqa: BLE001
             preview = None
         return {
-            "engine": "Trinix CAD (MCP) · 구독 Claude 구동 · STL export",
+            "engine": "Trinix CAD (MCP) · 구독 Claude 구동 · STEP export(파트 보존)",
+            "step_asset": step_asset,
             "stl_asset": stl_asset,
             "preview": preview,
             "report": res.get("report", "")[-1500:],

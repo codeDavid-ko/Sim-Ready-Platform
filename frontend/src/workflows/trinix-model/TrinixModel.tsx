@@ -7,6 +7,7 @@ import type { WorkflowModuleProps } from "../registry";
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 type Result = {
   engine: string;
+  step_asset: AssetRec | null;
   stl_asset: AssetRec | null;
   preview?: AssetRec | null;
   report: string;
@@ -87,18 +88,21 @@ export default function TrinixModel({ manifest }: WorkflowModuleProps) {
           )}
           <div className="card">
             <div className="row" style={{ justifyContent: "space-between" }}>
-              <label style={{ margin: 0 }}>결과 STL</label>
-              {result.stl_asset && <span className="badge ok">저장소 등록됨</span>}
+              <label style={{ margin: 0 }}>결과 모델</label>
+              {result.step_asset && <span className="badge ok">저장소 등록됨</span>}
             </div>
-            {result.stl_asset ? (
+            {result.step_asset ? (
               <>
-                <p className="muted">{result.stl_asset.filename} · {(result.stl_asset.bytes / 1024).toFixed(1)} KB</p>
-                <div className="row" style={{ marginTop: 8 }}>
-                  <button className="ghost" onClick={() => downloadFile(result.stl_asset!.download_url, result.stl_asset!.filename)}>STL 다운로드</button>
+                <p className="muted">{result.step_asset.filename} · {(result.step_asset.bytes / 1024).toFixed(1)} KB · 부품·이름 보존(STEP)</p>
+                <div className="row" style={{ marginTop: 8, gap: 8 }}>
+                  <button className="ghost" onClick={() => downloadFile(result.step_asset!.download_url, result.step_asset!.filename)}>STEP 다운로드</button>
+                  {result.stl_asset && (
+                    <button className="ghost" onClick={() => downloadFile(result.stl_asset!.download_url, result.stl_asset!.filename)}>STL 다운로드 (병합)</button>
+                  )}
                 </div>
-                <p className="muted" style={{ marginTop: 6 }}>이 STL을 “에셋 준비”나 “물성 추론” 카드에 올리면 sim-ready USD·물성으로 이어갈 수 있습니다.</p>
+                <p className="muted" style={{ marginTop: 6 }}>STEP은 부품이 분리돼 있어 “재질·물성 추론” 카드로 이어 <b>부품별 재질</b>을 입힐 수 있습니다. STL은 한 덩어리(빠른 확인용).</p>
               </>
-            ) : <p className="muted">STL 생성 실패.</p>}
+            ) : <p className="muted">모델 생성 실패.</p>}
           </div>
           {result.report && (
             <div className="card">

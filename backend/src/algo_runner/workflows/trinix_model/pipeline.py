@@ -38,7 +38,7 @@ def trinix_available() -> bool:
     return bool(s.trinix_ai_token) and _prompt_path().exists()
 
 
-def _task_prompt(image_paths: list[str], user_text: str, out_stl: Path) -> str:
+def _task_prompt(image_paths: list[str], user_text: str, out_step: Path) -> str:
     imgs = "\n".join(f"  - {p}" for p in image_paths) or "  (이미지 없음 — 텍스트만으로 추정 금지, 부족하면 보고)"
     text = user_text.strip() or "(텍스트 설명 없음)"
     return f"""다음 입력으로 Trinix CAD 에 3D 모델을 빌드하라. 시스템 프롬프트의 절차를 그대로 따른다.
@@ -49,18 +49,21 @@ def _task_prompt(image_paths: list[str], user_text: str, out_stl: Path) -> str:
 [입력 이미지] — 먼저 Read 도구로 한 장씩 열어 끝까지 정독한 뒤 추상화 시트를 작성하라.
 {imgs}
 
+[중요] 다운스트림에서 **부품별로 재질을 입힐 것**이므로, 의미 있는 부품 단위로 형상을 나누고
+각 shape 에 명확한 이름(resultUid)을 붙여라(예: wall_n, door_frame, bus_bar_1). 한 덩어리로 합치지 마라.
+
 [필수 마무리]
 1) 빌드가 끝나면 set_view 6면 + fit_all + take_screenshot 로 검증하고 bbox 를 보고한다.
-2) 반드시 export_scene 으로 **STL** 파일을 다음 절대경로에 저장한다(휘발성 — 빌드 직후 즉시):
-     {out_stl}
-   (format 은 stl. Trinix 는 USD/URDF export 미지원.)
+2) 반드시 export_scene 으로 **STEP** 파일을 다음 절대경로에 저장한다(휘발성 — 빌드 직후 즉시):
+     {out_step}
+   (format 은 step. STEP 은 부품 이름·분리를 보존한다 — 재질 추론에 필수. Trinix 는 USD/URDF export 미지원.)
 3) export 후 list_shapes 로 형상 수·부품 이름을 한 번 더 확인하고, 부품 목록을 요약해 보고하고 종료한다.
 
 연결이 불안정해 ok:true 여도 반영 안 될 수 있다(유령 데이터). 쓰기 후엔 list_shapes/스크린샷으로 재확인하라.
 """
 
 
-async def _build_async(images: list[tuple[bytes, str]], text: str, out_stl: Path, model: str) -> str:
+async def _build_async(images: list[tuple[bytes, str]], text: str, out_step: Path, model: str) -> str:
     from claude_agent_sdk import ClaudeAgentOptions, query
 
     from ...llm import _sync_env
@@ -93,7 +96,7 @@ async def _build_async(images: list[tuple[bytes, str]], text: str, out_stl: Path
             model=model,
         )
         out: list[str] = []
-        async for message in query(prompt=_task_prompt(tmp_imgs, text, out_stl), options=opts):
+        async for message in query(prompt=_task_prompt(tmp_imgs, text, out_step), options=opts):
             for block in getattr(message, "content", None) or []:
                 t = getattr(block, "text", None)
                 if t:
@@ -107,8 +110,8 @@ async def _build_async(images: list[tuple[bytes, str]], text: str, out_stl: Path
                 pass
 
 
-def build_stl(images: list[tuple[bytes, str]], text: str, model: str = "claude-opus-4-8") -> dict[str, Any]:
-    """모델 빌드 → STL 회수. {stl_bytes, report, run_dir}. 실패 시 RuntimeError."""
+def build_step(images: list[tuple[bytes, str]], text: str, model: str = "claude-opus-4-8") -> dict[str, Any]:
+    """모델 빌드 → STEP(파트 보존) 회수. {step_bytes, report, run_dir}. 실패 시 RuntimeError."""
     from ...settings import get_settings
     s = get_settings()
     if not s.trinix_ai_token:
@@ -119,26 +122,43 @@ def build_stl(images: list[tuple[bytes, str]], text: str, model: str = "claude-o
     rid = uuid.uuid4().hex[:12]
     rundir = _RUNS / rid
     rundir.mkdir(parents=True, exist_ok=True)
-    out_stl = rundir / "model.stl"
-    if out_stl.exists():
-        out_stl.unlink()
+    out_step = rundir / "model.step"
+    if out_step.exists():
+        out_step.unlink()
 
-    report = asyncio.run(_build_async(images, text, out_stl, model))
-    if not out_stl.exists():
+    report = asyncio.run(_build_async(images, text, out_step, model))
+    if not out_step.exists():
+        # Trinix 가 .stp 로 떨어뜨리는 경우 대비
+        alt = next((p for p in rundir.glob("model.st*p")), None)
+        if alt is not None:
+            out_step = alt
+    if not out_step.exists():
         raise RuntimeError(
-            "STL export 파일이 생성되지 않았습니다. Trinix 에디터 세션 페어링(녹색)·프로젝트 "
+            "STEP export 파일이 생성되지 않았습니다. Trinix 에디터 세션 페어링(녹색)·프로젝트 "
             f"토큰을 확인하세요.\n에이전트 보고(끝부분):\n{report[-1200:]}"
         )
-    return {"stl_bytes": out_stl.read_bytes(), "report": report, "run_dir": str(rundir)}
+    return {"step_bytes": out_step.read_bytes(), "report": report, "run_dir": str(rundir)}
 
 
-def preview_glb(stl_bytes: bytes) -> bytes:
-    """STL → 뷰어용 GLB(형상만)."""
+def _load_step_scene(step_bytes: bytes):
+    """STEP 바이트 → trimesh Scene(파트별 지오메트리, cascadio 경유)."""
     import io
 
     import trimesh
 
-    mesh = trimesh.load(io.BytesIO(stl_bytes), file_type="stl")
-    if isinstance(mesh, trimesh.Scene):
-        mesh = mesh.dump(concatenate=True)
-    return mesh.export(file_type="glb")
+    return trimesh.load(io.BytesIO(step_bytes), file_type="step")
+
+
+def preview_glb(step_bytes: bytes) -> bytes:
+    """STEP → 뷰어용 GLB(파트 보존)."""
+    scene = _load_step_scene(step_bytes)
+    return scene.export(file_type="glb")
+
+
+def merged_stl(step_bytes: bytes) -> bytes:
+    """편의용 병합 STL(파트 정보 없음 — 빠른 확인/범용 용도)."""
+    import trimesh
+
+    scene = _load_step_scene(step_bytes)
+    mesh = scene.dump(concatenate=True) if isinstance(scene, trimesh.Scene) else scene
+    return mesh.export(file_type="stl")

@@ -1,0 +1,14 @@
+{
+  "id": "trinix-simready",
+  "category": "ndotlight-trinix",
+  "name": "3D 모델링 → 재질·물성 (Trinix 파이프라인)",
+  "description": "이미지/텍스트 → Trinix CAD로 부품 단위 3D 모델(STEP) → 부품별 재질 추론(vMaterials) → 질량·접촉물리 추론까지 한 번에. 부품마다 재질이 들어간 USD + 물성(UsdPhysics) USD를 생성합니다. (전제: TRINIX_AI_TOKEN + 라이브 페어링 세션)",
+  "icon": "🏭",
+  "version": "1.0.0",
+  "requiredPermissions": [],
+  "entry": "trinix-simready",
+  "io": {
+    "input": { "params": { "text": "string" }, "file": { "label": "참조 이미지(선택, 복수)", "accept": "image/*", "required": false } },
+    "output": ["usd-download", "materials", "physics", "register"]
+  }
+}
