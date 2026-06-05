@@ -110,8 +110,32 @@ async def _build_async(images: list[tuple[bytes, str]], text: str, out_step: Pat
                 pass
 
 
+def _drop_dir() -> Path:
+    from ...settings import get_settings
+    s = get_settings()
+    return Path(s.trinix_drop_dir) if s.trinix_drop_dir else (_BACKEND / "_trinix_drop")
+
+
+def _newest_export_since(start: float) -> Path | None:
+    """keep_session 이 drop 폴더에 캡처한 export(다운로드) 중 start 이후 최신 STEP/STL."""
+    d = _drop_dir()
+    if not d.is_dir():
+        return None
+    cands = [
+        p for ext in ("*.step", "*.stp", "*.stl")
+        for p in d.glob(ext)
+        if p.is_file() and p.stat().st_mtime >= start - 2
+    ]
+    return max(cands, key=lambda p: p.stat().st_mtime) if cands else None
+
+
 def build_step(images: list[tuple[bytes, str]], text: str, model: str = "claude-opus-4-8") -> dict[str, Any]:
-    """모델 빌드 → STEP(파트 보존) 회수. {step_bytes, report, run_dir}. 실패 시 RuntimeError."""
+    """모델 빌드 → STEP(파트 보존) 회수. {step_bytes, report, run_dir}. 실패 시 RuntimeError.
+
+    회수 경로 2가지: (1) 에이전트가 export_scene 으로 쓴 절대경로(out_step),
+    (2) keep_session 이 페어링 브라우저의 export 다운로드를 drop 폴더에 캡처한 파일."""
+    import time
+
     from ...settings import get_settings
     s = get_settings()
     if not s.trinix_ai_token:
@@ -126,18 +150,21 @@ def build_step(images: list[tuple[bytes, str]], text: str, model: str = "claude-
     if out_step.exists():
         out_step.unlink()
 
+    start = time.time()
     report = asyncio.run(_build_async(images, text, out_step, model))
-    if not out_step.exists():
-        # Trinix 가 .stp 로 떨어뜨리는 경우 대비
+
+    found: Path | None = None
+    if out_step.exists():
+        found = out_step
+    else:
         alt = next((p for p in rundir.glob("model.st*p")), None)
-        if alt is not None:
-            out_step = alt
-    if not out_step.exists():
+        found = alt or _newest_export_since(start)  # drop 폴더(다운로드 캡처) 폴백
+    if found is None:
         raise RuntimeError(
-            "STEP export 파일이 생성되지 않았습니다. Trinix 에디터 세션 페어링(녹색)·프로젝트 "
-            f"토큰을 확인하세요.\n에이전트 보고(끝부분):\n{report[-1200:]}"
+            "export 파일을 회수하지 못했습니다. keep_session(페어링 브라우저)이 떠 있는지, "
+            "Trinix 에디터 페어링(녹색)·토큰을 확인하세요.\n에이전트 보고(끝부분):\n" + report[-1000:]
         )
-    return {"step_bytes": out_step.read_bytes(), "report": report, "run_dir": str(rundir)}
+    return {"step_bytes": found.read_bytes(), "report": report, "run_dir": str(rundir), "src": str(found)}
 
 
 def _load_step_scene(step_bytes: bytes):

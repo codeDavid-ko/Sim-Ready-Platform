@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     trinix_ai_token: str = ""
     trinix_mcp_endpoint: str = "https://mcp.trinix-ai.com/mcp"
     trinix_platform_dir: str = r"C:\Users\user\Desktop\Claude\GIT\trinix-modeling-platform"
+    # keep_session 이 export 다운로드를 떨구는 폴더(백엔드가 여기서 결과 파일 회수).
+    trinix_drop_dir: str = ""
 
     def cors_origins(self) -> list[str]:
         items = [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
