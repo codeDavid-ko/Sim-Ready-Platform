@@ -1,0 +1,14 @@
+{
+  "id": "sd-texture",
+  "category": "ndotlight-trinix",
+  "name": "텍스처 생성 (Stable Diffusion · 로컬)",
+  "description": "텍스트 프롬프트로 PBR 텍스처(albedo+normal+roughness)를 로컬 Stable Diffusion(SD-Turbo)으로 생성 — 외부 API 키 불필요, GPU에서 무료로 동작. 결과를 타일 머티리얼로 브라우저에서 인터랙티브 미리보기 + USD/USDZ로 내보내기.",
+  "icon": "🖌️",
+  "version": "1.0.0",
+  "requiredPermissions": [],
+  "entry": "sd-texture",
+  "io": {
+    "input": { "params": { "prompt": "string" } },
+    "output": ["texture-maps", "viewer-glb", "usd-download"]
+  }
+}

@@ -7,6 +7,7 @@ import ContentPhysics from "./content-physics/ContentPhysics";
 import ContentTexture from "./content-texture/ContentTexture";
 import MaterialCompare from "./material-compare/MaterialCompare";
 import MassPhysics from "./mass-physics/MassPhysics";
+import SdTexture from "./sd-texture/SdTexture";
 
 // 백엔드 manifest.json 과 같은 모양 (셸은 이것만 알고 내부는 모른다).
 export type WorkflowManifest = {
@@ -42,4 +43,5 @@ export const MODULES: Record<string, ComponentType<WorkflowModuleProps>> = {
   "content-texture": ContentTexture,
   "material-compare": MaterialCompare,
   "mass-physics": MassPhysics,
+  "sd-texture": SdTexture,
 };
