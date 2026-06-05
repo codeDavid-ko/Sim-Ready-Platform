@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiJson, blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
+import SpinViewer from "../SpinViewer";
 
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 type Result = {
@@ -131,6 +132,7 @@ export default function SdTexture({ manifest }: WorkflowModuleProps) {
                 {result.usd_asset && <button className="ghost" onClick={() => downloadFile(result.usd_asset!.download_url, result.usd_asset!.filename)}>USDA 다운로드</button>}
                 {result.usdz_asset && <button className="ghost" onClick={() => downloadFile(result.usdz_asset!.download_url, result.usdz_asset!.filename)}>USDZ 다운로드 (자기완결)</button>}
               </div>
+              {result.usdz_asset && <SpinViewer assetId={result.usdz_asset.id} label="🖱 인터랙티브 RTX 뷰어 (Omniverse · 드래그 회전)" />}
             </div>
           )}
         </>

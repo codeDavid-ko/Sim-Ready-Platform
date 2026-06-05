@@ -162,3 +162,41 @@ def merged_stl(step_bytes: bytes) -> bytes:
     scene = _load_step_scene(step_bytes)
     mesh = scene.dump(concatenate=True) if isinstance(scene, trimesh.Scene) else scene
     return mesh.export(file_type="stl")
+
+
+def geometry_usd(step_bytes: bytes) -> bytes:
+    """STEP → 형상만 담은 자기완결 USDA(파트별 Mesh). Isaac RTX 뷰어용(재질 없음).
+
+    cascadio STEP 은 미터·Y-up → upAxis=Y, metersPerUnit=1 로 그대로 저작.
+    조명은 isaac_render.py 가 추가하므로 여기선 불필요."""
+    import numpy as np
+    import trimesh
+    from pxr import Gf, Usd, UsdGeom
+
+    scene = _load_step_scene(step_bytes)
+    if not isinstance(scene, trimesh.Scene):
+        scene = trimesh.Scene(scene)
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
+    root = UsdGeom.Xform.Define(stage, "/World")
+    stage.SetDefaultPrim(root.GetPrim())
+
+    seen: dict[str, int] = {}
+    for node in scene.graph.nodes_geometry:
+        T, gname = scene.graph[node]
+        geo = scene.geometry[gname]
+        V = trimesh.transformations.transform_points(np.asarray(geo.vertices, float), T)
+        F = np.asarray(geo.faces, int)
+        if len(V) == 0 or len(F) == 0:
+            continue
+        safe = "".join(c if c.isalnum() else "_" for c in str(gname)) or "part"
+        seen[safe] = seen.get(safe, 0) + 1
+        nm = safe if seen[safe] == 1 else f"{safe}_{seen[safe]}"
+        mesh = UsdGeom.Mesh.Define(stage, f"/World/{nm}")
+        mesh.CreatePointsAttr([Gf.Vec3f(float(a), float(b), float(c)) for a, b, c in V])
+        mesh.CreateFaceVertexCountsAttr([3] * len(F))
+        mesh.CreateFaceVertexIndicesAttr([int(i) for i in F.reshape(-1)])
+        mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+    return stage.GetRootLayer().ExportToString().encode("utf-8")

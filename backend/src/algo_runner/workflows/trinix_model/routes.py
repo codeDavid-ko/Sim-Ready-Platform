@@ -70,10 +70,19 @@ async def submit(
             )
         except Exception:  # noqa: BLE001
             preview = None
+        usd_asset = None
+        try:
+            usd_asset = ctx.register_asset(
+                display_name="model geometry (usd)", filename="model_geom.usda",
+                data=pipeline.geometry_usd(step), meta={"stage": "geometry-usd"},
+            )
+        except Exception:  # noqa: BLE001
+            usd_asset = None
         return {
             "engine": "Trinix CAD (MCP) · 구독 Claude 구동 · STEP export(파트 보존)",
             "step_asset": step_asset,
             "stl_asset": stl_asset,
+            "usd_asset": usd_asset,
             "preview": preview,
             "report": res.get("report", "")[-1500:],
         }
