@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import AssetPrep from "./asset-prep/AssetPrep";
+import Articulation from "./articulation/Articulation";
 import SampleSum from "./sample-sum/SampleSum";
 import MaterialUsd from "./material-usd/MaterialUsd";
 import ContentMaterial from "./content-material/ContentMaterial";
@@ -41,6 +42,7 @@ export type WorkflowModuleProps = {
 // 새 워크플로우 추가 = 백엔드에 폴더(manifest+handler) + 여기 한 줄.
 export const MODULES: Record<string, ComponentType<WorkflowModuleProps>> = {
   "asset-prep": AssetPrep,
+  "articulation": Articulation,
   "sample-sum": SampleSum,
   "material-usd": MaterialUsd,
   "content-material": ContentMaterial,
