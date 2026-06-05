@@ -8,6 +8,7 @@ import ContentTexture from "./content-texture/ContentTexture";
 import MaterialCompare from "./material-compare/MaterialCompare";
 import MassPhysics from "./mass-physics/MassPhysics";
 import SdTexture from "./sd-texture/SdTexture";
+import TrinixModel from "./trinix-model/TrinixModel";
 
 // 백엔드 manifest.json 과 같은 모양 (셸은 이것만 알고 내부는 모른다).
 export type WorkflowManifest = {
@@ -44,4 +45,5 @@ export const MODULES: Record<string, ComponentType<WorkflowModuleProps>> = {
   "material-compare": MaterialCompare,
   "mass-physics": MassPhysics,
   "sd-texture": SdTexture,
+  "trinix-model": TrinixModel,
 };

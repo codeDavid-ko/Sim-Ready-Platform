@@ -39,6 +39,11 @@ class Settings(BaseSettings):
         """텍스처 '생성'(diffusion)이 가능한 외부 키가 하나라도 있는지."""
         return bool(self.nvidia_api_key or self.openai_api_key or self.google_api_key)
 
+    # Trinix CAD MCP (이미지/텍스트 → 3D 모델). 토큰 + 라이브 페어링 세션 필요.
+    trinix_ai_token: str = ""
+    trinix_mcp_endpoint: str = "https://mcp.trinix-ai.com/mcp"
+    trinix_platform_dir: str = r"C:\Users\user\Desktop\Claude\GIT\trinix-modeling-platform"
+
     def cors_origins(self) -> list[str]:
         items = [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
         return items or ["http://localhost:3000"]
