@@ -50,17 +50,24 @@ def _usd_units(file_bytes: bytes, ext: str) -> tuple[str, str]:
     return units, ("Z" if up.upper().startswith("Z") else "Y")
 
 
-def _compare_work(data: bytes, name: str, text: str) -> dict[str, Any]:
-    """두 엔진 실행 + 결과 병합 (동기; 잡 스레드/to_thread 에서 호출)."""
+def _compare_work(
+    data: bytes, name: str, text: str, images: list[tuple[bytes, str]] | None = None
+) -> dict[str, Any]:
+    """두 엔진 실행 + 결과 병합 (동기; 잡 스레드/to_thread 에서 호출).
+
+    images 는 **material-usd(NdotLight) 쪽 분류에만** 전달한다. content-agents 는
+    자체 멀티뷰 렌더로 이미지를 만들어 쓰므로 참조 이미지를 받지 않는다."""
     s = get_settings()
+    imgs = images or []
     ext = PurePath(name).suffix.lower()
     in_units, up_axis = _usd_units(data, ext)
 
-    # (A) material-usd — classify 는 async → 이 스레드 전용 루프로 실행
+    # (A) material-usd — classify 는 async → 이 스레드 전용 루프로 실행.
+    # 이미지가 있으면 모드 1(전체 이미지 + 부품 이름), 없으면 모드 2(텍스트 설명).
     parts_json, _glb = mu.ingest(data, name, in_units, up_axis)
     asg_a = asyncio.run(
         mu.classify(
-            parts_json, "2", text, [], s.vmaterials_root,
+            parts_json, "1" if imgs else "2", text, imgs, s.vmaterials_root,
             s.anthropic_api_key, s.claude_code_oauth_token, s.claude_model,
         )
     )
@@ -128,23 +135,42 @@ async def _read_validate(file: UploadFile) -> tuple[bytes, str]:
     return data, name
 
 
+async def _read_images(images: list[UploadFile]) -> list[tuple[bytes, str]]:
+    """참조 이미지 → (bytes, mime) 리스트. material-usd 분류에만 쓰인다."""
+    out: list[tuple[bytes, str]] = []
+    for im in images:
+        b = await im.read()
+        if b:
+            out.append((b, im.content_type or "image/jpeg"))
+    return out
+
+
 @router.post("/compare-submit")
 async def compare_submit(
-    file: UploadFile = File(...), text: str = Form(""), _gate: None = Depends(require_auth)
+    file: UploadFile = File(...),
+    text: str = Form(""),
+    images: list[UploadFile] = File(default=[]),
+    _gate: None = Depends(require_auth),
 ) -> dict[str, Any]:
-    """비교를 백그라운드 잡으로 제출 → {job_id}. (브라우저용 — 타임아웃 회피)"""
+    """비교를 백그라운드 잡으로 제출 → {job_id}. (브라우저용 — 타임아웃 회피)
+    images 는 NdotLight(material-usd) 분류에만 전달."""
     data, name = await _read_validate(file)
-    job_id = jobs.submit(lambda: _compare_work(data, name, text))
+    imgs = await _read_images(images)
+    job_id = jobs.submit(lambda: _compare_work(data, name, text, imgs))
     return {"job_id": job_id}
 
 
 @router.post("/compare")
 async def compare(
-    file: UploadFile = File(...), text: str = Form(""), _gate: None = Depends(require_auth)
+    file: UploadFile = File(...),
+    text: str = Form(""),
+    images: list[UploadFile] = File(default=[]),
+    _gate: None = Depends(require_auth),
 ) -> dict[str, Any]:
     """동기 비교(직접 호출용). 두 엔진 모두 끝날 때까지 대기."""
     data, name = await _read_validate(file)
+    imgs = await _read_images(images)
     try:
-        return await asyncio.to_thread(_compare_work, data, name, text)
+        return await asyncio.to_thread(_compare_work, data, name, text, imgs)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"compare 오류: {exc}") from None

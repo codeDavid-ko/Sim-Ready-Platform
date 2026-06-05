@@ -31,6 +31,7 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
     ".usd,.usda,.usdc,.usdz";
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
+  const [images, setImages] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -83,6 +84,7 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("text", text);
+      for (const img of images) fd.append("images", img);
       const r = await submitAndPoll<Result>(`/api/workflows/${WF}/compare-submit`, fd);
       setResult(r);
       for (const [rec, set] of [
@@ -111,8 +113,15 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
         <form onSubmit={run}>
           <label>USD 파일 ({accept})</label>
           <input type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          <label>재질 힌트 (선택, material-usd 쪽 분류에 사용)</label>
+          <label>재질 힌트 (선택, NdotLight 쪽 분류에 사용)</label>
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="예: 알루미늄 사다리, 발끝은 고무" />
+          <label>참조 이미지 (선택 · <b>NdotLight 쪽에만</b> 전달)</label>
+          <input type="file" accept="image/*" multiple onChange={(e) => setImages(Array.from(e.target.files ?? []))} />
+          <p className="muted">
+            이미지를 넣으면 NdotLight(material-usd)는 실제 색/외형을 보고 vMaterials를 고릅니다.
+            NVIDIA content-agents는 자체 멀티뷰 렌더를 쓰므로 이 이미지를 받지 않습니다(공정 비교를 위해 형상은 동일, 힌트만 NdotLight에).
+            {images.length > 0 ? ` — 이미지 ${images.length}장 첨부됨` : ""}
+          </p>
           <p className="muted">두 엔진을 모두 실행합니다 — <b>수 분</b> 소요(특히 NVIDIA 쪽 WSL 렌더).</p>
           <div style={{ marginTop: 12 }}>
             <button type="submit" disabled={busy}>{busy ? "두 엔진 실행 중… (수 분)" : "비교 실행"}</button>
