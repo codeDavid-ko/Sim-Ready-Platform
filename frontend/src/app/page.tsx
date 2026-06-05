@@ -102,7 +102,7 @@ export default function Home() {
   // SCR-00 최초 관리자 설정 (사용자가 0명일 때)
   if (!authed && needsSetup) {
     return (
-      <main className="wrap">
+      <main className="authwrap">
         <div className="card">
           <h2>Sim-ready Platform — 초기 설정</h2>
           <p className="muted">최초 실행입니다. 사용할 <b>관리자 아이디와 비밀번호</b>를 직접 정하세요.</p>
@@ -124,7 +124,7 @@ export default function Home() {
   // SCR-01 로그인
   if (!authed) {
     return (
-      <main className="wrap">
+      <main className="authwrap">
         <div className="card">
           <h2>Sim-ready Platform</h2>
           <form onSubmit={login}>
@@ -154,10 +154,10 @@ export default function Home() {
       </div>
 
       {showAdmin ? (
-        <UserAdmin onBack={() => setShowAdmin(false)} />
+        <div className="detail"><UserAdmin onBack={() => setShowAdmin(false)} /></div>
       ) : selected ? (
         // SCR-03 마운트
-        <WorkflowContainer manifest={selected} onBack={() => setSelected(null)} />
+        <div className="detail"><WorkflowContainer manifest={selected} onBack={() => setSelected(null)} /></div>
       ) : (
         <>
           <p className="muted">워크플로우를 골라 실행하세요. 새 워크플로우는 매니페스트 등록만으로 카드가 늘어납니다.</p>

@@ -5,7 +5,11 @@ body {
   background: #f6f7f9;
   color: #1a1a1a;
 }
-.wrap { max-width: 680px; margin: 0 auto; padding: 32px 20px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px; }
+/* 로그인/초기설정 등 폼 화면은 좁게 가운데 */
+.authwrap { max-width: 420px; margin: 7vh auto 0; padding: 0 20px; }
+/* 워크플로우 상세·관리자 화면은 읽기 좋은 폭(뷰어/표가 과도하게 넓어지지 않게) */
+.detail { max-width: 940px; margin: 0 auto; }
 .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
 label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
 input, textarea { width: 100%; padding: 8px 10px; border: 1px solid #cfd4da; border-radius: 8px; font-size: 14px; }
