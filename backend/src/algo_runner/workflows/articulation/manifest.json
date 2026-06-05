@@ -7,6 +7,7 @@
   "description": "STEP/USD를 올려 3D로 보면서, 부품을 골라 관절(회전·직선·고정)과 축을 지정해 UsdPhysics 조인트가 들어간 USD로 내보냅니다. 로봇/기구의 가동부를 간단히 정의하는 유틸리티.",
   "icon": "🦾",
   "version": "1.0.0",
+  "entry": "articulation",
   "requiredPermissions": [],
   "io": {
     "input": { "file": { "label": "STEP/USD 파일", "accept": ".step,.stp,.usd,.usda,.usdc,.usdz", "required": true } },
