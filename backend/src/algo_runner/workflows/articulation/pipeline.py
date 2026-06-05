@@ -115,7 +115,107 @@ def _under(mesh_path: str, node_path: str) -> bool:
     return mesh_path == node_path or mesh_path.startswith(node_path.rstrip("/") + "/")
 
 
-def author_usd(meshes: list[dict], joints: list[dict[str, Any]]) -> tuple[bytes, list[dict[str, Any]]]:
+def author_preserve(file_bytes: bytes, name: str, joints: list[dict[str, Any]]) -> tuple[bytes, list[dict[str, Any]]]:
+    """**원본 계층을 보존**한 채 선택 prim 에 RigidBody/Collision + UsdPhysics 조인트만 얹는다.
+    구조(트리)를 그대로 유지하고 물리만 추가 → 메시/객체 구조가 깨지지 않는다.
+
+    pivot 은 프런트가 보낸 월드 미터좌표 → 스테이지 단위(/mpu)로 변환 후 각 바디 로컬프레임으로."""
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
+
+    ext = PurePath(name).suffix.lower()
+    fd, path = tempfile.mkstemp(suffix=ext if ext in _USD_EXT else ".usd")
+    with os.fdopen(fd, "wb") as f:
+        f.write(file_bytes)
+    fd2, outp = tempfile.mkstemp(suffix=".usd")
+    os.close(fd2)
+    try:
+        if ext in _STEP_EXT:
+            # STEP 은 계층이 없으므로 평면 USD 로 변환 후 보존 경로 사용
+            tree, meshes = _extract_step(path)
+            return _author_flat(meshes, joints)
+
+        stage = Usd.Stage.Open(path)
+        mpu = UsdGeom.GetStageMetersPerUnit(stage) or 1.0
+        xcache = UsdGeom.XformCache()
+        bcache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_, UsdGeom.Tokens.render])
+
+        # PhysicsScene (없으면 추가)
+        if not any(p.IsA(UsdPhysics.Scene) for p in stage.Traverse()):
+            sc = UsdPhysics.Scene.Define(stage, "/PhysicsScene")
+            sc.CreateGravityDirectionAttr(Gf.Vec3f(0, 0, -1)); sc.CreateGravityMagnitudeAttr(9.81)
+
+        def apply_body(prim_path: str) -> None:
+            prim = stage.GetPrimAtPath(prim_path)
+            if not prim or not prim.IsValid():
+                return
+            UsdPhysics.RigidBodyAPI.Apply(prim)
+            for d in Usd.PrimRange(prim):
+                if d.IsA(UsdGeom.Mesh):
+                    UsdPhysics.CollisionAPI.Apply(d)
+                    UsdPhysics.MeshCollisionAPI.Apply(d).CreateApproximationAttr(UsdPhysics.Tokens.convexHull)
+
+        def piv_world(j, child_prim) -> Gf.Vec3d:
+            if j.get("pivot"):
+                p = j["pivot"]
+                return Gf.Vec3d(float(p[0]) / mpu, float(p[1]) / mpu, float(p[2]) / mpu)
+            rng = bcache.ComputeWorldBound(child_prim).ComputeAlignedRange()
+            c = (rng.GetMin() + rng.GetMax()) * 0.5
+            return Gf.Vec3d(c[0], c[1], c[2])
+
+        UsdGeom.Scope.Define(stage, "/Joints")
+        authored = []
+        for i, j in enumerate(joints):
+            child_p = j.get("child"); parent_p = j.get("parent") or ""
+            cprim = stage.GetPrimAtPath(child_p) if child_p else None
+            if not cprim or not cprim.IsValid():
+                continue
+            apply_body(child_p)
+            if parent_p and stage.GetPrimAtPath(parent_p).IsValid():
+                apply_body(parent_p)
+            jtype = (j.get("type") or "revolute").lower()
+            axis = (j.get("axis") or "Z").upper(); axis = axis if axis in ("X", "Y", "Z") else "Z"
+            jp = f"/Joints/joint_{i}"
+            if jtype == "prismatic":
+                J = UsdPhysics.PrismaticJoint.Define(stage, jp); J.CreateAxisAttr(axis)
+            elif jtype == "fixed":
+                J = UsdPhysics.FixedJoint.Define(stage, jp)
+            else:
+                jtype = "revolute"; J = UsdPhysics.RevoluteJoint.Define(stage, jp); J.CreateAxisAttr(axis)
+            pw = piv_world(j, cprim)
+            inv_c = xcache.GetLocalToWorldTransform(cprim).GetInverse()
+            lp1 = inv_c.Transform(pw)
+            J.CreateBody1Rel().SetTargets([Sdf.Path(child_p)])
+            J.CreateLocalPos1Attr(Gf.Vec3f(lp1[0], lp1[1], lp1[2]))
+            if parent_p and stage.GetPrimAtPath(parent_p).IsValid():
+                J.CreateBody0Rel().SetTargets([Sdf.Path(parent_p)])
+                inv_p = xcache.GetLocalToWorldTransform(stage.GetPrimAtPath(parent_p)).GetInverse()
+                lp0 = inv_p.Transform(pw)
+            else:
+                lp0 = pw
+            J.CreateLocalPos0Attr(Gf.Vec3f(lp0[0], lp0[1], lp0[2]))
+            lo, hi = j.get("lower"), j.get("upper")
+            if jtype in ("revolute", "prismatic") and lo is not None and hi is not None:
+                lo, hi = float(lo), float(hi)
+                if lo > hi:
+                    lo, hi = hi, lo
+                if lo != hi:
+                    J.CreateLowerLimitAttr(lo); J.CreateUpperLimitAttr(hi)
+            authored.append({"name": f"joint_{i}", "type": jtype, "axis": axis,
+                             "parent": parent_p or "(world)", "child": child_p, "lower": lo, "upper": hi})
+
+        stage.Export(outp)
+        with open(outp, "rb") as f:
+            data = f.read()
+        return data, authored
+    finally:
+        for p in (path, outp):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+
+def _author_flat(meshes: list[dict], joints: list[dict[str, Any]]) -> tuple[bytes, list[dict[str, Any]]]:
     """meshes(월드 미터) + joints → 바디(선택 서브트리)별 RigidBody + UsdPhysics 조인트 USD.
 
     조인트가 참조하는 노드 path 각각을 하나의 바디로 묶는다(그 path 아래 메시들). 메시는

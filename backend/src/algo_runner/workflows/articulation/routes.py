@@ -51,8 +51,7 @@ async def build(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"joints JSON 오류: {exc}") from None
     try:
-        _tree, meshes = pipeline.extract(data, name)
-        usda, authored = pipeline.author_usd(meshes, jlist)
+        usda, authored = pipeline.author_preserve(data, name, jlist)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"build 오류: {exc}") from None
     stem = PurePath(name).stem
