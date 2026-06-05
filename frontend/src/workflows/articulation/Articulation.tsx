@@ -226,8 +226,32 @@ export default function Articulation({ manifest }: WorkflowModuleProps) {
           </div>
           <div ref={mount} style={{ width: "100%", height: 440, marginTop: 8, borderRadius: 8, overflow: "hidden", background: "#0d1117", cursor: "pointer" }} />
           <p className="muted" style={{ marginTop: 6 }}>
-            모드를 고른 뒤 3D에서 부품/표면을 클릭 — <span style={{ color: "#4ec9b0" }}>자식=초록</span>, <span style={{ color: "#3794ff" }}>부모=파랑</span>, 노란 점=피벗(회전축 위치), 화살표=축.
+            모드를 고른 뒤 3D에서 부품/표면을 클릭하거나, 아래 <b>부품 목록</b>에서 골라도 됩니다 — <span style={{ color: "#4ec9b0" }}>자식=초록</span>, <span style={{ color: "#3794ff" }}>부모=파랑</span>, 노란 점=피벗, 화살표=축.
           </p>
+
+          <div style={{ marginTop: 8 }}>
+            <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>부품 목록 ({parts.length}) — 행 클릭 = 현재 모드 적용 / 버튼으로 직접 지정</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+              {parts.map((p) => (
+                <div
+                  key={p.name}
+                  onClick={() => { if (mode === "parent") setParent(p.name); else if (mode === "pivot") setPivot(p.centroid_m); else setChild(p.name); }}
+                  title={`${p.size_mm.join(" × ")} mm`}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, cursor: "pointer",
+                    border: "1px solid #3c3c3c", borderRadius: 6, padding: "5px 8px",
+                    background: child === p.name ? "rgba(78,201,176,.15)" : parent === p.name ? "rgba(55,148,255,.15)" : "transparent",
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                  <span className="row" style={{ gap: 4, flex: "none" }} onClick={(e) => e.stopPropagation()}>
+                    <button className="ghost" style={{ padding: "1px 7px", fontSize: 11 }} onClick={() => setChild(p.name)}>자식</button>
+                    <button className="ghost" style={{ padding: "1px 7px", fontSize: 11 }} onClick={() => setParent(p.name)}>부모</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 6 }}>
             <div><div className="muted" style={{ fontSize: 11 }}>자식</div><b>{child || "—"}</b></div>
