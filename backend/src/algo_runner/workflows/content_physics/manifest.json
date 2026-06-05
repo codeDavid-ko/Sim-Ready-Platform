@@ -1,6 +1,7 @@
 {
   "id": "content-physics",
   "category": "nvidia-content-agents",
+  "tagline": "NVIDIA 엔진으로 질량·물리 추론",
   "name": "물리 추론 (NVIDIA 엔진)",
   "description": "USD를 NVIDIA content-agents Physics 에이전트로 처리 — WSL2에서 멀티뷰 렌더(Warp) + 구독 Claude VLM으로 부품을 식별하고 질량·마찰·반발 등 물리 속성을 추론해 UsdPhysics가 적용된 시뮬레디 USD 생성. (수 분 소요)",
   "icon": "⚙️",

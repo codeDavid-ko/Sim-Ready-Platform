@@ -16,6 +16,7 @@ export type WorkflowManifest = {
   id: string;
   name: string;
   description: string;
+  tagline?: string;
   icon?: string;
   version: string;
   entry: string;

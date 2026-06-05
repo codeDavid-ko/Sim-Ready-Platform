@@ -44,14 +44,14 @@ export function CardGrid({
                 <div key={w.id} className="wf-card disabled" title={w.disabledNote}>
                   <div className="wf-icon">{w.icon ?? "▢"}</div>
                   <div className="wf-name">{w.name}</div>
-                  <div className="wf-desc">{w.description}</div>
+                  <div className="wf-desc">{w.tagline ?? w.description}</div>
                   <div className="wf-lock">🔒 {w.disabledNote ?? "Disabled"}</div>
                 </div>
               ) : (
                 <button key={w.id} className="wf-card" onClick={() => onSelect(w)}>
                   <div className="wf-icon">{w.icon ?? "▢"}</div>
                   <div className="wf-name">{w.name}</div>
-                  <div className="wf-desc">{w.description}</div>
+                  <div className="wf-desc">{w.tagline ?? w.description}</div>
                 </button>
               ),
             )}

@@ -106,7 +106,7 @@ table { color: var(--vsc-fg); }
 .wf-lock { margin-top: 10px; font-size: 11.5px; font-weight: 600; color: var(--vsc-err); line-height: 1.4; }
 .wf-icon { font-size: 26px; margin-bottom: 8px; }
 .wf-name { font-weight: 600; font-size: 15px; margin-bottom: 5px; color: var(--vsc-fg-strong); }
-.wf-desc { color: var(--vsc-muted); font-size: 12.5px; line-height: 1.45; }
+.wf-desc { color: var(--vsc-muted); font-size: 12.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* 배지 / 체크 */
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
