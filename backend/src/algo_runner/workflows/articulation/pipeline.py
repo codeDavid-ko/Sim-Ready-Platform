@@ -20,7 +20,10 @@ _SUPPORTED = _USD_EXT | _STEP_EXT
 
 
 def _safe(s: str) -> str:
-    return "".join(c if c.isalnum() else "_" for c in str(s)).strip("_") or "node"
+    r = "".join(c if c.isalnum() else "_" for c in str(s)).strip("_") or "node"
+    if r[0].isdigit():        # USD prim 이름은 숫자로 시작 불가
+        r = "n_" + r
+    return r
 
 
 # ───────────────────────── 추출 (트리 + 월드 메시) ─────────────────────────
