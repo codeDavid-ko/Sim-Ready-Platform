@@ -31,6 +31,9 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
   // 비번 변경
   const [pwFor, setPwFor] = useState<string | null>(null);
   const [pwVal, setPwVal] = useState("");
+  // 외부 공개 터널
+  const [tunnel, setTunnel] = useState<{ running: boolean; url: string | null; error: string | null; installed: boolean } | null>(null);
+  const [tunnelBusy, setTunnelBusy] = useState(false);
 
   async function load() {
     setError(null);
@@ -40,9 +43,35 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
       setMe(r.me);
     } catch (e) { setError(String((e as Error).message)); }
   }
-  useEffect(() => { load(); }, []);
+  type Tun = { running: boolean; url: string | null; error: string | null; installed: boolean };
+  async function loadTunnel() {
+    try { setTunnel(await adminJson<Tun>("/api/admin/tunnel")); } catch { /* */ }
+  }
+  useEffect(() => { load(); loadTunnel(); }, []);
 
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(null), 2500); }
+
+  async function startTunnel() {
+    setError(null); setTunnelBusy(true);
+    try {
+      let st = await adminJson<Tun>("/api/admin/tunnel/start", { method: "POST" });
+      setTunnel(st);
+      // URL 은 cloudflared 로그에서 몇 초 뒤 잡힘 → 잠깐 폴링
+      for (let i = 0; i < 15 && st.running && !st.url; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        st = await adminJson<Tun>("/api/admin/tunnel");
+        setTunnel(st);
+      }
+      if (st.error) setError(st.error);
+    } catch (e) { setError(String((e as Error).message)); }
+    finally { setTunnelBusy(false); }
+  }
+  async function stopTunnel() {
+    setTunnelBusy(true);
+    try { setTunnel(await adminJson<Tun>("/api/admin/tunnel/stop", { method: "POST" })); }
+    catch (e) { setError(String((e as Error).message)); }
+    finally { setTunnelBusy(false); }
+  }
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -91,6 +120,32 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
 
       {error && <div className="card"><p className="err">{error}</p></div>}
       {msg && <div className="card"><p className="muted">✓ {msg}</p></div>}
+
+      <div className="card">
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <label style={{ margin: 0 }}>외부 공개 (Cloudflare 터널)</label>
+          {tunnel && <span className={`badge ${tunnel.running ? "ok" : ""}`}>{tunnel.running ? "켜짐" : "꺼짐"}</span>}
+        </div>
+        {tunnel && !tunnel.installed && <p className="err">cloudflared 가 설치되어 있지 않습니다.</p>}
+        {tunnel?.running && tunnel.url && (
+          <div style={{ marginTop: 8 }}>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <a href={tunnel.url} target="_blank" rel="noreferrer" style={{ fontWeight: 600, wordBreak: "break-all" }}>{tunnel.url}</a>
+              <button className="ghost" onClick={() => { navigator.clipboard?.writeText(tunnel.url!); flash("URL 복사됨"); }}>복사</button>
+            </div>
+            <p className="muted" style={{ marginTop: 6 }}>이 주소를 공유하면 외부에서 접속합니다. 로그인(아이디/비밀번호)으로 보호됩니다. 임시 주소라 끄면 사라지고, 다시 켜면 새 주소가 생깁니다.</p>
+          </div>
+        )}
+        {tunnel?.running && !tunnel.url && tunnelBusy && <p className="muted" style={{ marginTop: 6 }}>주소 받는 중…</p>}
+        {tunnel?.error && <p className="err">{tunnel.error}</p>}
+        <div className="row" style={{ marginTop: 10, gap: 8 }}>
+          {tunnel?.running ? (
+            <button className="ghost" onClick={stopTunnel} disabled={tunnelBusy}>{tunnelBusy ? "처리 중…" : "외부 공개 끄기"}</button>
+          ) : (
+            <button onClick={startTunnel} disabled={tunnelBusy || (tunnel ? !tunnel.installed : false)}>{tunnelBusy ? "켜는 중… (주소 생성)" : "외부 공개 켜기"}</button>
+          )}
+        </div>
+      </div>
 
       <div className="card">
         <label>새 사용자 추가</label>
