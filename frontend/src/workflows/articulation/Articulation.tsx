@@ -165,6 +165,8 @@ export default function Articulation({ manifest }: WorkflowModuleProps) {
   function addJoint() {
     if (!child) { setError("자식(가동부) 노드를 고르세요."); return; }
     if (parent === child) { setError("부모와 자식이 같을 수 없습니다."); return; }
+    if (jtype !== "fixed" && lower > upper) { setError("하한이 상한보다 클 수 없습니다 (하한 ≤ 상한)."); return; }
+    if (jtype !== "fixed" && lower === upper) { setError("하한과 상한이 같으면 움직일 수 없습니다."); return; }
     setError(null);
     setJoints((js) => [...js, { type: jtype, parent, child, axis, pivot: pivot ?? bodyCentroid(child), lower: jtype === "fixed" ? undefined : lower, upper: jtype === "fixed" ? undefined : upper }]);
     setChild(""); setParent(""); setPivot(null); setPreview(false); setMode("child");
@@ -250,13 +252,16 @@ export default function Articulation({ manifest }: WorkflowModuleProps) {
               </select></div>
             {jtype !== "fixed" && (<>
               <div><label style={{ marginTop: 0 }}>하한{jtype === "prismatic" ? "(m)" : "(°)"}</label><input type="number" value={lower} onChange={(e) => setLower(Number(e.target.value))} style={{ width: 76 }} /></div>
-              <div><label style={{ marginTop: 0 }}>상한{jtype === "prismatic" ? "(m)" : "(°)"}</label><input type="number" value={upper} onChange={(e) => setUpper(Number(e.target.value))} style={{ width: 76 }} /></div>
-              <button className={preview ? "" : "ghost"} onClick={() => setPreview((v) => !v)} disabled={!child}>{preview ? "■ 미리보기" : "▶ 미리보기"}</button>
+              <div><label style={{ marginTop: 0 }}>상한{jtype === "prismatic" ? "(m)" : "(°)"}</label><input type="number" value={upper} onChange={(e) => setUpper(Number(e.target.value))} style={{ width: 76, borderColor: lower >= upper ? "#f48771" : undefined }} /></div>
+              <button className={preview ? "" : "ghost"} onClick={() => setPreview((v) => !v)} disabled={!child || lower >= upper}>{preview ? "■ 미리보기" : "▶ 미리보기"}</button>
             </>)}
             {parent && <button className="ghost" onClick={() => setParent("")}>부모=world</button>}
             {pivot && <button className="ghost" onClick={() => setPivot(null)}>피벗=중심</button>}
-            <button onClick={addJoint}>관절 추가</button>
+            <button onClick={addJoint} disabled={!child || (jtype !== "fixed" && lower >= upper)}>관절 추가</button>
           </div>
+          {jtype !== "fixed" && lower >= upper && (
+            <p className="err" style={{ marginTop: 6 }}>하한({lower})은 상한({upper})보다 작아야 합니다.</p>
+          )}
         </div>
       )}
 

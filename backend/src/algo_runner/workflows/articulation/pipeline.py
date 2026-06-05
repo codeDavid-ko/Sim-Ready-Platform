@@ -208,7 +208,11 @@ def author_usd(meshes: list[dict], joints: list[dict[str, Any]]) -> tuple[bytes,
         J.CreateLocalPos1Attr(Gf.Vec3f(float(piv[0]), float(piv[1]), float(piv[2])))
         lo, hi = j.get("lower"), j.get("upper")
         if jtype in ("revolute", "prismatic") and lo is not None and hi is not None:
-            J.CreateLowerLimitAttr(float(lo)); J.CreateUpperLimitAttr(float(hi))
+            lo, hi = float(lo), float(hi)
+            if lo > hi:                       # 방어적: 뒤집혀 오면 교정
+                lo, hi = hi, lo
+            if lo != hi:                      # 같으면 한계 미설정(자유) — 잠김 방지
+                J.CreateLowerLimitAttr(lo); J.CreateUpperLimitAttr(hi)
         authored.append({"name": f"joint_{i}", "type": jtype, "axis": axis,
                          "parent": parent or "(world)", "child": child, "lower": lo, "upper": hi})
 
