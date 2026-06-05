@@ -51,8 +51,9 @@ def parse_parts(file_bytes: bytes, name: str) -> list[tuple[str, np.ndarray, np.
         raise ValueError("형상에서 부품(메시)을 찾지 못했습니다.")
     parts, seen = [], {}
     for nm, V, F in raw:
-        seen[nm] = seen.get(nm, 0) + 1
-        unm = nm if seen[nm] == 1 else f"{nm}_{seen[nm]}"
+        base = "".join(c if c.isalnum() else "_" for c in str(nm)) or "part"
+        seen[base] = seen.get(base, 0) + 1
+        unm = base if seen[base] == 1 else f"{base}_{seen[base]}"
         parts.append((unm, np.asarray(V, float) * scale, np.asarray(F, int)))
     return parts
 
@@ -68,6 +69,23 @@ def parts_meta(parts: list[tuple[str, np.ndarray, np.ndarray]]) -> list[dict[str
             "size_mm": [round(float(x) * 1000, 1) for x in (mx - mn)],
             "bbox_min_m": [round(float(x), 5) for x in mn],
             "bbox_max_m": [round(float(x), 5) for x in mx],
+        })
+    return out
+
+
+def parts_payload(parts: list[tuple[str, np.ndarray, np.ndarray]]) -> list[dict[str, Any]]:
+    """프런트 Three.js 가 직접 메시를 만들 수 있게 지오메트리 포함(미터, 백엔드와 동일 좌표계).
+    GLB Y-up 변환으로 인한 피벗/축 좌표 불일치를 피한다."""
+    out = []
+    for nm, V, F in parts:
+        mn, mx = V.min(0), V.max(0)
+        c = (mn + mx) / 2
+        out.append({
+            "name": nm,
+            "centroid_m": [round(float(x), 5) for x in c],
+            "size_mm": [round(float(x) * 1000, 1) for x in (mx - mn)],
+            "vertices": [round(float(x), 5) for x in V.reshape(-1).tolist()],
+            "faces": [int(i) for i in F.reshape(-1).tolist()],
         })
     return out
 
@@ -148,7 +166,12 @@ def author_usd(parts: list[tuple[str, np.ndarray, np.ndarray]], joints: list[dic
         # 바디는 항등 변환 + 월드좌표 메시 → 로컬프레임 == 월드프레임
         J.CreateLocalPos0Attr(Gf.Vec3f(float(piv[0]), float(piv[1]), float(piv[2])))
         J.CreateLocalPos1Attr(Gf.Vec3f(float(piv[0]), float(piv[1]), float(piv[2])))
+        lo, hi = j.get("lower"), j.get("upper")
+        if jtype in ("revolute", "prismatic") and lo is not None and hi is not None:
+            J.CreateLowerLimitAttr(float(lo))   # revolute=deg, prismatic=거리(m)
+            J.CreateUpperLimitAttr(float(hi))
         authored.append({"name": f"joint_{i}", "type": jtype, "axis": axis,
-                         "parent": parent or "(world)", "child": child})
+                         "parent": parent or "(world)", "child": child,
+                         "lower": lo, "upper": hi})
 
     return stage.GetRootLayer().ExportToString().encode("utf-8"), authored

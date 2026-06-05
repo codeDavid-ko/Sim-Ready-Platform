@@ -31,9 +31,7 @@ async def ingest(file: UploadFile = File(...), _gate: None = Depends(require_aut
         parts = pipeline.parse_parts(data, name)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"ingest 오류: {exc}") from None
-    stem = PurePath(name).stem
-    glb = storage.register_asset(_WF_ID, f"{stem} (viewer)", f"{stem}.glb", pipeline.viewer_glb(parts), {"stage": "viewer"})
-    return {"ok": True, "parts": pipeline.parts_meta(parts), "glb": glb}
+    return {"ok": True, "parts": pipeline.parts_payload(parts)}
 
 
 @router.post("/build")
