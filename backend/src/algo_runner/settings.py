@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     # material-usd 워크플로우: NVIDIA vMaterials 설치 경로(빌드 시 MDL 참조). 비우면 뷰어에서 핑크/검정.
     vmaterials_root: str = ""
 
+    # 이미지 생성(텍스처) 백엔드 키 — content-texture 의 generate_textures 가 필요로 함.
+    nvidia_api_key: str = ""
+    openai_api_key: str = ""
+    google_api_key: str = ""
+
+    def image_gen_available(self) -> bool:
+        """텍스처 '생성'(diffusion)이 가능한 외부 키가 하나라도 있는지."""
+        return bool(self.nvidia_api_key or self.openai_api_key or self.google_api_key)
+
     def cors_origins(self) -> list[str]:
         items = [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
         return items or ["http://localhost:3000"]

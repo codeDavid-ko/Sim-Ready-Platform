@@ -39,13 +39,22 @@ export function CardGrid({
         <section key={g.key} className="cat">
           <h3 className="cat-title">{g.label}</h3>
           <div className="grid">
-            {g.items.map((w) => (
-              <button key={w.id} className="wf-card" onClick={() => onSelect(w)}>
-                <div className="wf-icon">{w.icon ?? "▢"}</div>
-                <div className="wf-name">{w.name}</div>
-                <div className="wf-desc">{w.description}</div>
-              </button>
-            ))}
+            {g.items.map((w) =>
+              w.disabled ? (
+                <div key={w.id} className="wf-card disabled" title={w.disabledNote}>
+                  <div className="wf-icon">{w.icon ?? "▢"}</div>
+                  <div className="wf-name">{w.name}</div>
+                  <div className="wf-desc">{w.description}</div>
+                  <div className="wf-lock">🔒 {w.disabledNote ?? "Disabled"}</div>
+                </div>
+              ) : (
+                <button key={w.id} className="wf-card" onClick={() => onSelect(w)}>
+                  <div className="wf-icon">{w.icon ?? "▢"}</div>
+                  <div className="wf-name">{w.name}</div>
+                  <div className="wf-desc">{w.description}</div>
+                </button>
+              ),
+            )}
           </div>
         </section>
       ))}

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import FileResponse
 
 from .auth import require_auth
+from .settings import get_settings
 from .workflows import jobs, registry, storage
 from .workflows.material_usd import isaac
 
@@ -25,7 +26,16 @@ _MAX_FILE = 100 * 1024 * 1024  # 100MB (3D 에셋 고려)
 
 @router.get("")
 def list_workflows(_gate: None = Depends(require_auth)) -> dict[str, Any]:
-    return {"workflows": registry.list_manifests()}
+    """매니페스트 목록. 이미지생성 키가 없으면 requiresImageGen 카드를 disabled 로 표시."""
+    img_ok = get_settings().image_gen_available()
+    out: list[dict[str, Any]] = []
+    for m in registry.list_manifests():
+        m = dict(m)
+        if m.get("requiresImageGen") and not img_ok:
+            m["disabled"] = True
+            m["disabledNote"] = "Requires an NVIDIA API key for image generation. Set NVIDIA_API_KEY in backend/.env to enable."
+        out.append(m)
+    return {"workflows": out}
 
 
 @router.get("/jobs/{job_id}")

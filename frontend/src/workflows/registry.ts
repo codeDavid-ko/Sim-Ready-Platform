@@ -18,6 +18,9 @@ export type WorkflowManifest = {
   entry: string;
   category?: string;
   hidden?: boolean;
+  requiresImageGen?: boolean;
+  disabled?: boolean;
+  disabledNote?: string;
   requiredPermissions?: string[];
   io?: { input?: Record<string, unknown>; output?: string[] };
 };
