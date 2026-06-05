@@ -21,6 +21,7 @@ export type WorkflowManifest = {
   version: string;
   entry: string;
   category?: string;
+  order?: number;
   hidden?: boolean;
   requiresImageGen?: boolean;
   disabled?: boolean;

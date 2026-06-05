@@ -1,6 +1,7 @@
 {
   "id": "material-compare",
   "category": "comparison",
+  "order": 1,
   "tagline": "두 엔진의 재질 추론을 나란히 비교",
   "name": "엔진 비교: 재질 (NdotLight vs NVIDIA)",
   "description": "같은 USD를 두 엔진에 모두 돌려 부품별 재질을 나란히 비교 — (A) material-usd(부품 메타데이터 + 구독 Claude → vMaterials) vs (B) NVIDIA content-agents(멀티뷰 렌더 + 구독 Claude VLM → 재질 라이브러리, WSL). 수 분 소요.",

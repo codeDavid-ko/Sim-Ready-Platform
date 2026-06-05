@@ -45,6 +45,7 @@ export default function MassPhysics({ manifest }: WorkflowModuleProps) {
   const [units, setUnits] = useState("mm");
   const [context, setContext] = useState("");
   const [layout, setLayout] = useState("assembled");
+  const [images, setImages] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -100,6 +101,7 @@ export default function MassPhysics({ manifest }: WorkflowModuleProps) {
       fd.append("in_units", units);
       fd.append("context", context);
       fd.append("layout", layout);
+      for (const img of images) fd.append("images", img);
       const r = await submitAndPoll<Result>(`/api/workflows/${WF}/submit`, fd);
       setResult(r);
       if (r.preview?.download_url) {
@@ -147,6 +149,9 @@ export default function MassPhysics({ manifest }: WorkflowModuleProps) {
           </div>
           <label style={{ marginTop: 8 }}>제품/맥락 힌트 (선택 — Stage1 재질분류 prior)</label>
           <input value={context} onChange={(e) => setContext(e.target.value)} placeholder="예: 접이식 운반 박스(폴리프로필렌), 또는 산업용 강철 브래킷" />
+          <label style={{ marginTop: 8 }}>참조 이미지 (선택 · 복수 — 실제 색/외형으로 재질 추론 보강)</label>
+          <input type="file" accept="image/*" multiple onChange={(e) => setImages(Array.from(e.target.files ?? []))} />
+          {images.length > 0 && <p className="muted">이미지 {images.length}장 첨부됨 — Stage1 재질 분류에 사용됩니다.</p>}
           <p className="muted">질량·부피·관성은 형상에서 정확 계산(LLM 아님). 재질·접촉계수만 구독 Claude가 추론합니다.</p>
           <div style={{ marginTop: 12 }}>
             <button type="submit" disabled={busy}>{busy ? "추론 중… (Stage1/2)" : "물성 추론 실행"}</button>

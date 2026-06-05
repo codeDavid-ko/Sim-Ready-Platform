@@ -1,6 +1,7 @@
 {
   "id": "material-usd",
   "category": "ndotlight-trinix",
+  "order": 1,
   "tagline": "형상 업로드 → 부품별 vMaterials 재질 USD",
   "name": "재질 추론 USD",
   "description": "STL/STEP/USD를 올리고, 이미지/설명으로 부품별 재질(vMaterials)을 추론해 재질 바인딩된 자기완결 USD를 생성 (ingest→classify→build 단계형).",

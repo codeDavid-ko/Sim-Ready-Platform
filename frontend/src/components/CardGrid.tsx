@@ -27,9 +27,11 @@ export function CardGrid({
   const groups = [...CATEGORIES, OTHER]
     .map((c) => ({
       ...c,
-      items: visible.filter((w) =>
-        c.key === OTHER.key ? !w.category || !known.has(w.category) : w.category === c.key,
-      ),
+      items: visible
+        .filter((w) =>
+          c.key === OTHER.key ? !w.category || !known.has(w.category) : w.category === c.key,
+        )
+        .sort((a, b) => (a.order ?? 99) - (b.order ?? 99)),
     }))
     .filter((g) => g.items.length > 0);
 

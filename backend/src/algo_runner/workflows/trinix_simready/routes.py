@@ -83,7 +83,7 @@ async def submit(
         phys_parts: list[dict[str, Any]] = []
         try:
             parts = mp.parse_geometry(step, _NAME, "m")
-            asyncio.run(mp.infer(parts, context=prompt, api_key=s.anthropic_api_key,
+            asyncio.run(mp.infer(parts, context=prompt, images=imgs, api_key=s.anthropic_api_key,
                                  oauth_token=s.claude_code_oauth_token, model=s.claude_model))
             phys_usda = mp.author_usd(parts)
             phys_asset = ctx.register_asset("물성 USD", "model_physics.usda", phys_usda, {"stage": "physics"})

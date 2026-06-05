@@ -1,8 +1,9 @@
 {
   "id": "mass-physics",
   "category": "ndotlight-trinix",
+  "order": 2,
   "tagline": "STEP/STL → 정확 질량 + 접촉물리 USD",
-  "name": "물성 추론 (질량·접촉물리)",
+  "name": "물리 추론 (질량·접촉물리)",
   "description": "STEP/STL을 받아 형상에서 정확 질량특성(부피·관성·CoM, trimesh)을 결정론적으로 구하고, 구독 Claude로 부품별 재질(Stage1)과 접촉 물리값(Stage2, range clamp)을 추론해 mass=ρ×V로 UsdPhysics가 적용된 단일 .usd를 생성합니다. 질량/부피/관성은 LLM이 정하지 않습니다. (ndotsim 파이프라인)",
   "icon": "⚖️",
   "version": "1.0.0",

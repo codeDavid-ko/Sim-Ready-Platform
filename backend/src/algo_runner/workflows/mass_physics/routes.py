@@ -38,6 +38,7 @@ async def submit(
     in_units: str = Form("mm"),
     context: str = Form(""),
     layout: str = Form("assembled"),
+    images: list[UploadFile] = File(default=[]),
     _gate: None = Depends(require_auth),
 ) -> dict[str, Any]:
     data = await file.read()
@@ -46,6 +47,11 @@ async def submit(
     name = file.filename or "asset.stl"
     s = get_settings()
     stem = PurePath(name).stem
+    imgs: list[tuple[bytes, str]] = []
+    for im in images:
+        b = await im.read()
+        if b:
+            imgs.append((b, im.content_type or "image/jpeg"))
 
     def _job() -> dict[str, Any]:
         parts = pipeline.parse_geometry(data, name, in_units)
@@ -53,6 +59,7 @@ async def submit(
             pipeline.infer(
                 parts,
                 context=context,
+                images=imgs,
                 api_key=s.anthropic_api_key,
                 oauth_token=s.claude_code_oauth_token,
                 model=s.claude_model,

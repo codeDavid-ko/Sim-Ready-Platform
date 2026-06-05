@@ -151,15 +151,20 @@ def _extract_json(text: str) -> dict[str, Any]:
     return json.loads(text[s : e + 1])
 
 
-async def _call_llm(system: str, user: str, api_key: str, oauth_token: str, model: str) -> dict[str, Any]:
-    """구독(claude-agent-sdk) 우선, API 키 있으면 raw anthropic. forced JSON 파싱."""
+async def _call_llm(
+    system: str, user: str, api_key: str, oauth_token: str, model: str,
+    images: list[tuple[bytes, str]] | None = None,
+) -> dict[str, Any]:
+    """구독(claude-agent-sdk) 우선, API 키 있으면 raw anthropic. forced JSON 파싱.
+    images(참조 이미지)가 있으면 분류 프롬프트에 같이 넣는다(Stage1 재질 추론 정확도↑)."""
+    imgs = images or []
     prompt = system + "\n\n" + user
     if api_key:
         from ..material_usd.pipeline import _classify_via_anthropic
-        raw = _classify_via_anthropic(prompt, [], api_key)
+        raw = _classify_via_anthropic(prompt, imgs, api_key)
     else:
         from ..material_usd.pipeline import _classify_via_agent
-        raw = await _classify_via_agent(prompt, [], model)
+        raw = await _classify_via_agent(prompt, imgs, model)
     return _extract_json(raw)
 
 
@@ -211,12 +216,13 @@ def _clamp(v: float, lo: float, hi: float) -> tuple[float, bool]:
 async def infer(
     parts: list[dict[str, Any]],
     context: str = "",
+    images: list[tuple[bytes, str]] | None = None,
     api_key: str = "",
     oauth_token: str = "",
     model: str = "claude-sonnet-4-6",
 ) -> dict[str, Any]:
     """Stage1(재질)+Stage2(접촉물리) 추론 → parts 에 material/density/friction/restitution 주입.
-    LLM 없으면(키·토큰 모두 없음) 재질 미정 — steel 기본 + range 중앙값 폴백."""
+    images(참조 이미지)는 Stage1 재질 분류에만 사용. LLM 없으면 steel 기본 + range 중앙값 폴백."""
     n = len(parts)
     clamped: list[dict] = []
     if not (api_key or oauth_token):
@@ -226,7 +232,7 @@ async def infer(
             p["material_reasoning"] = "LLM 미사용(인증 없음): steel 기본값"
         mats = ["steel"] * n
     else:
-        s1 = await _call_llm(_STAGE1_SYS, _stage1_user(parts, context), api_key, oauth_token, model)
+        s1 = await _call_llm(_STAGE1_SYS, _stage1_user(parts, context), api_key, oauth_token, model, images=images)
         choice_by_idx = {int(c["part_index"]): c for c in s1.get("choices", [])}
         mats = []
         for i, p in enumerate(parts):

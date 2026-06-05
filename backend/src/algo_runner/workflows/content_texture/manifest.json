@@ -1,6 +1,7 @@
 {
   "id": "content-texture",
   "category": "nvidia-content-agents",
+  "order": 3,
   "requiresImageGen": true,
   "tagline": "NVIDIA 엔진으로 텍스처 생성",
   "name": "텍스처 추론 (NVIDIA 엔진)",
