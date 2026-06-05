@@ -6,6 +6,7 @@ import type { WorkflowManifest } from "@/workflows/registry";
 const CATEGORIES: { key: string; label: string }[] = [
   { key: "ndotlight-trinix", label: "NdotLight Trinix" },
   { key: "nvidia-content-agents", label: "NVIDIA Content Agents" },
+  { key: "comparison", label: "비교 (Comparison)" },
 ];
 const OTHER = { key: "__other__", label: "기타" };
 
