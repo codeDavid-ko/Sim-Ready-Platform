@@ -211,16 +211,33 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
               두 엔진은 어휘가 다릅니다 — material-usd는 NVIDIA vMaterials(MDL), content-agents는 자체 재질 라이브러리. 같은 부품에 대한 두 추론을 비교하세요.
             </p>
           </div>
-          {result.content_asset && (
+          {(result.render_material_usd || result.content_asset) && (
             <div className="card">
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <label style={{ margin: 0 }}>content-agents 결과 USD</label>
-                <span className="badge ok">{result.content_status}</span>
+              <label>결과 USD 다운로드</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
+                <div>
+                  <div className="muted" style={{ marginBottom: 4 }}>NdotLight (material-usd · vMaterials)</div>
+                  {result.render_material_usd ? (
+                    <>
+                      <p className="muted">{result.render_material_usd.filename} · {(result.render_material_usd.bytes / 1024).toFixed(1)} KB</p>
+                      <button className="ghost" onClick={() => downloadFile(result.render_material_usd!.download_url, result.render_material_usd!.filename)}>USD 다운로드</button>
+                    </>
+                  ) : <p className="muted">생성 실패/없음</p>}
+                </div>
+                <div>
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <span className="muted">NVIDIA content-agents</span>
+                    {result.content_status && <span className="badge ok">{result.content_status}</span>}
+                  </div>
+                  {result.content_asset ? (
+                    <>
+                      <p className="muted">{result.content_asset.filename} · {(result.content_asset.bytes / 1024).toFixed(1)} KB</p>
+                      <button className="ghost" onClick={() => downloadFile(result.content_asset!.download_url, result.content_asset!.filename)}>USD 다운로드</button>
+                    </>
+                  ) : <p className="muted">생성 실패/없음</p>}
+                </div>
               </div>
-              <p className="muted">{result.content_asset.filename} · {(result.content_asset.bytes / 1024).toFixed(1)} KB</p>
-              <div className="row" style={{ marginTop: 8 }}>
-                <button className="ghost" onClick={() => downloadFile(result.content_asset!.download_url, result.content_asset!.filename)}>USD 다운로드</button>
-              </div>
+              <p className="muted" style={{ marginTop: 6 }}>NdotLight은 자기완결 vMaterials USD(.usda), content-agents는 자체 결과 USD입니다.</p>
             </div>
           )}
         </>
