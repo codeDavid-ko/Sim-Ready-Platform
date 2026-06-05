@@ -57,21 +57,25 @@ def _write(users: list[dict[str, Any]]) -> None:
     _USERS.write_text(json.dumps({"users": users}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def ensure_bootstrap(admin_username: str, admin_password: str) -> None:
-    """사용자가 하나도 없으면 admin 계정을 만든다(최초 1회)."""
+def needs_setup() -> bool:
+    """사용자가 한 명도 없으면 True — 최초 관리자 설정 화면을 띄운다."""
     with _LOCK:
-        users = _read()
-        if users:
-            return
-        pw = admin_password or "changeme"
-        _write([
-            {
-                "username": admin_username or "admin",
-                "role": "admin",
-                "pw": hash_password(pw),
-                "created": int(time.time()),
-            }
-        ])
+        return not _read()
+
+
+def create_first_admin(username: str, password: str) -> dict[str, Any]:
+    """최초 1회: 사용자가 전혀 없을 때만 첫 관리자를 만든다(선점 방지)."""
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("아이디를 입력하세요.")
+    if not password:
+        raise ValueError("비밀번호를 입력하세요.")
+    with _LOCK:
+        if _read():
+            raise ValueError("이미 초기화되었습니다. 로그인하세요.")
+        rec = {"username": username, "role": "admin", "pw": hash_password(password), "created": int(time.time())}
+        _write([rec])
+    return {"username": username, "role": "admin", "created": rec["created"]}
 
 
 def list_users() -> list[dict[str, Any]]:
