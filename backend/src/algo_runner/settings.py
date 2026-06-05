@@ -14,7 +14,8 @@ _STATE_DIR = Path.home() / ".algo-runner"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_password: str = ""        # 비우면 인증 없음(공개)
+    app_password: str = ""        # admin 초기 비밀번호(부트스트랩용). 이후엔 users.json 이 출처.
+    admin_username: str = "admin" # 부트스트랩되는 최초 관리자 아이디
     auth_secret: str = ""         # 비우면 자동 생성·재사용
     allowed_origins: str = ""     # 외부공개 URL(쉼표). 비우면 localhost:3000
     port: int = 8000
