@@ -1,5 +1,6 @@
 {
   "id": "asset-prep",
+  "hidden": true,
   "name": "에셋 준비",
   "description": "3D 에셋을 sim-ready USD로 변환·검증·등록 (Z-up, meters, 충돌/리지드바디 부여)",
   "icon": "📦",

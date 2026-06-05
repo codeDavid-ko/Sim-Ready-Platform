@@ -2,7 +2,14 @@
 
 import type { WorkflowManifest } from "@/workflows/registry";
 
-// SCR-02 — 매니페스트 목록을 카드 그리드로 렌더. 셸은 카드 내용을 모른다.
+// 카테고리 표시 순서/라벨. 매니페스트의 category 키와 매칭.
+const CATEGORIES: { key: string; label: string }[] = [
+  { key: "ndotlight-trinix", label: "NdotLight Trinix" },
+  { key: "nvidia-content-agents", label: "NVIDIA Content Agents" },
+];
+const OTHER = { key: "__other__", label: "기타" };
+
+// SCR-02 — 매니페스트 목록을 카테고리별 카드 그리드로 렌더. 셸은 카드 내용을 모른다.
 export function CardGrid({
   workflows,
   onSelect,
@@ -10,17 +17,36 @@ export function CardGrid({
   workflows: WorkflowManifest[];
   onSelect: (m: WorkflowManifest) => void;
 }) {
-  if (workflows.length === 0) {
+  const visible = workflows.filter((w) => !w.hidden);
+  if (visible.length === 0) {
     return <p className="muted">등록된 워크플로우가 없습니다.</p>;
   }
+
+  const known = new Set(CATEGORIES.map((c) => c.key));
+  const groups = [...CATEGORIES, OTHER]
+    .map((c) => ({
+      ...c,
+      items: visible.filter((w) =>
+        c.key === OTHER.key ? !w.category || !known.has(w.category) : w.category === c.key,
+      ),
+    }))
+    .filter((g) => g.items.length > 0);
+
   return (
-    <div className="grid">
-      {workflows.map((w) => (
-        <button key={w.id} className="wf-card" onClick={() => onSelect(w)}>
-          <div className="wf-icon">{w.icon ?? "▢"}</div>
-          <div className="wf-name">{w.name}</div>
-          <div className="wf-desc">{w.description}</div>
-        </button>
+    <div className="cats">
+      {groups.map((g) => (
+        <section key={g.key} className="cat">
+          <h3 className="cat-title">{g.label}</h3>
+          <div className="grid">
+            {g.items.map((w) => (
+              <button key={w.id} className="wf-card" onClick={() => onSelect(w)}>
+                <div className="wf-icon">{w.icon ?? "▢"}</div>
+                <div className="wf-name">{w.name}</div>
+                <div className="wf-desc">{w.description}</div>
+              </button>
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   );

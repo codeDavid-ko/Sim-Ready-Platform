@@ -1,5 +1,6 @@
 {
   "id": "content-material",
+  "category": "nvidia-content-agents",
   "name": "재질 추론 (NVIDIA 엔진)",
   "description": "USD를 NVIDIA content-agents Material 에이전트로 처리 — WSL2에서 멀티뷰 렌더(Warp) + 구독 Claude VLM으로 부품별 재질을 추론해 재질 바인딩된 USD 생성. (수 분 소요)",
   "icon": "🏗️",
