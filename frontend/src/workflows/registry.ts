@@ -6,6 +6,7 @@ import ContentMaterial from "./content-material/ContentMaterial";
 import ContentPhysics from "./content-physics/ContentPhysics";
 import ContentTexture from "./content-texture/ContentTexture";
 import MaterialCompare from "./material-compare/MaterialCompare";
+import PhysicsCompare from "./physics-compare/PhysicsCompare";
 import MassPhysics from "./mass-physics/MassPhysics";
 import SdTexture from "./sd-texture/SdTexture";
 import TrinixModel from "./trinix-model/TrinixModel";
@@ -46,6 +47,7 @@ export const MODULES: Record<string, ComponentType<WorkflowModuleProps>> = {
   "content-physics": ContentPhysics,
   "content-texture": ContentTexture,
   "material-compare": MaterialCompare,
+  "physics-compare": PhysicsCompare,
   "mass-physics": MassPhysics,
   "sd-texture": SdTexture,
   "trinix-model": TrinixModel,
