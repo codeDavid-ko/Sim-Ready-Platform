@@ -20,12 +20,28 @@ import numpy as np
 import trimesh
 from pxr import Gf, Tf, Usd, UsdGeom, UsdPhysics, Vt
 
-_SUPPORTED = {"glb", "gltf", "obj", "stl", "ply"}
+_SUPPORTED = {"glb", "gltf", "obj", "stl", "ply", "step", "stp"}
 _TRI_BUDGET = 200_000
 
 
 def _load_mesh(file_bytes: bytes, ext: str) -> trimesh.Trimesh:
-    loaded = trimesh.load(io.BytesIO(file_bytes), file_type=ext)
+    if ext in {"step", "stp"}:
+        # STEP 은 cascadio(파일 경로)로 로드가 안정적 → 임시파일 경유.
+        import os
+        import tempfile
+
+        fd, path = tempfile.mkstemp(suffix=f".{ext}")
+        with os.fdopen(fd, "wb") as f:
+            f.write(file_bytes)
+        try:
+            loaded = trimesh.load(path)
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    else:
+        loaded = trimesh.load(io.BytesIO(file_bytes), file_type=ext)
     if isinstance(loaded, trimesh.Scene):
         if not loaded.geometry:
             raise ValueError("씬에 메시 지오메트리가 없습니다.")

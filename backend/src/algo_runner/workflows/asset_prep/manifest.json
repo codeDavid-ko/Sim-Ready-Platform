@@ -1,8 +1,10 @@
 {
   "id": "asset-prep",
-  "hidden": true,
-  "name": "에셋 준비",
-  "description": "3D 에셋을 sim-ready USD로 변환·검증·등록 (Z-up, meters, 충돌/리지드바디 부여)",
+  "category": "etc",
+  "order": 1,
+  "tagline": "STEP/STL/메시 → sim-ready USD (Z-up·충돌·리지드바디)",
+  "name": "형상 → USD 변환 (에셋 준비)",
+  "description": "STEP/STL/OBJ/GLB/PLY 메시를 sim-ready USD로 변환·검증·등록 (Z-up, meters, 충돌/리지드바디 부여). 다른 카드(물리/재질 추론)에 넣기 전 형상을 USD로 정규화하는 유틸리티.",
   "icon": "📦",
   "version": "1.0.0",
   "requiredPermissions": [],
@@ -11,7 +13,7 @@
     "input": {
       "file": {
         "label": "3D 에셋 파일",
-        "accept": ".glb,.gltf,.obj,.stl,.ply",
+        "accept": ".step,.stp,.glb,.gltf,.obj,.stl,.ply",
         "required": true
       }
     },

@@ -7,6 +7,7 @@ const CATEGORIES: { key: string; label: string }[] = [
   { key: "ndotlight-trinix", label: "NdotLight Trinix" },
   { key: "nvidia-content-agents", label: "NVIDIA Content Agents" },
   { key: "comparison", label: "비교 (Comparison)" },
+  { key: "etc", label: "기타 (유틸리티)" },
 ];
 const OTHER = { key: "__other__", label: "기타" };
 
