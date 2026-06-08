@@ -1,6 +1,13 @@
 import "./globals.css";
 
-export const metadata = { title: "algo-runner", description: "URL로 알고리즘 돌리기" };
+export const metadata = {
+  title: "에이전트 플랫폼",
+  description: "에이전트 플랫폼 — Sim-Ready 3D 워크플로우",
+  openGraph: {
+    title: "에이전트 플랫폼",
+    description: "에이전트 플랫폼 — Sim-Ready 3D 워크플로우",
+  },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
