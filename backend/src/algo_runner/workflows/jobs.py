@@ -9,14 +9,30 @@ from __future__ import annotations
 
 import threading
 import uuid
+from pathlib import Path
 from typing import Any, Callable
 
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
+# 무중단 업데이트용 드레인 플래그(파일). graceful_reload 스크립트가 켜면 새 잡을 거부하고
+# 진행 중 잡이 끝나길 기다린 뒤 백엔드를 재시작한다(돌던 잡을 안 죽임).
+_DRAIN_FILE = Path.home() / ".algo-runner" / "DRAINING"
+
+
+def draining() -> bool:
+    return _DRAIN_FILE.exists()
+
+
+def running_count() -> int:
+    with _lock:
+        return sum(1 for j in _jobs.values() if j.get("status") == "running")
+
 
 def submit(fn: Callable[[], Any]) -> str:
     """fn 을 데몬 스레드로 실행하고 job_id 반환."""
+    if _DRAIN_FILE.exists():
+        raise RuntimeError("서버 업데이트 준비 중입니다. 잠시 후 다시 시도하세요.")
     job_id = uuid.uuid4().hex[:12]
     with _lock:
         _jobs[job_id] = {"status": "running", "result": None, "error": None}

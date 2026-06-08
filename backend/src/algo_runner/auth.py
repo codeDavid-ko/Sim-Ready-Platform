@@ -71,6 +71,8 @@ class LoginOut(BaseModel):
 class StatusOut(BaseModel):
     auth_required: bool
     needs_setup: bool
+    jobs_running: int = 0
+    draining: bool = False
 
 
 class MeOut(BaseModel):
@@ -80,7 +82,9 @@ class MeOut(BaseModel):
 
 @router.get("/status", response_model=StatusOut)
 def status(s: Settings = Depends(get_settings)) -> StatusOut:
-    return StatusOut(auth_required=True, needs_setup=users.needs_setup())
+    from .workflows import jobs
+    return StatusOut(auth_required=True, needs_setup=users.needs_setup(),
+                     jobs_running=jobs.running_count(), draining=jobs.draining())
 
 
 @router.post("/setup", response_model=LoginOut)
