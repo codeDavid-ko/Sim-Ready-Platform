@@ -1,8 +1,11 @@
-"""trinix-model 잡 라우트 — 이미지/텍스트 → Trinix CAD → STL.
+"""trinix-model 잡 라우트 — 이미지/텍스트 → Trinix CAD 모델 → 다각도 스크린샷 + bbox 프록시.
 
-POST /api/workflows/trinix-model/submit  (form: text, images[]) -> {job_id}
-GET  /api/workflows/trinix-model/ready    -> {ready}  (토큰+프롬프트 준비 여부)
-GET  /api/workflows/jobs/{job_id} 로 폴링.
+Trinix 의 export_scene 이 서버측 고장이라 정밀 형상 파일은 못 받는다. 대신:
+- take_screenshot/verify_views 로 **실제 RTX 스크린샷**(인라인 이미지) 회수,
+- list_shapes 의 부품별 bbox 로 **bbox 프록시 USD/STL** 생성(부품수·위치·크기 정확, 블록 근사).
+
+POST /api/workflows/trinix-model/submit (text, images[]) -> {job_id}
+GET  /api/workflows/trinix-model/ready -> {ready}
 """
 
 from __future__ import annotations
@@ -34,10 +37,7 @@ async def submit(
     if not text.strip() and not images:
         raise HTTPException(status_code=400, detail="텍스트 설명 또는 참조 이미지를 입력하세요.")
     if not pipeline.trinix_available():
-        raise HTTPException(
-            status_code=400,
-            detail="Trinix 가 준비되지 않았습니다. .env 의 TRINIX_AI_TOKEN 과 라이브 페어링 세션(keep_session.py)을 확인하세요.",
-        )
+        raise HTTPException(status_code=400, detail="Trinix 가 준비되지 않았습니다(.env TRINIX_AI_TOKEN + 라이브 페어링 세션).")
     imgs: list[tuple[bytes, str]] = []
     for im in images:
         b = await im.read()
@@ -48,43 +48,24 @@ async def submit(
     prompt = text.strip()
 
     def _job() -> dict[str, Any]:
-        res = pipeline.build_step(imgs, prompt)
+        res = pipeline.build_capture(imgs, prompt)
         ctx = registry.WorkflowContext(_WF_ID)
-        step = res["step_bytes"]
-        step_asset = ctx.register_asset(
-            display_name="trinix model", filename="model.step", data=step,
-            meta={"engine": "trinix-cad", "source_text": prompt[:200], "parts_preserved": True},
-        )
-        stl_asset = preview = None
-        try:
-            stl_asset = ctx.register_asset(
-                display_name="trinix model (stl)", filename="model.stl",
-                data=pipeline.merged_stl(step), meta={"stage": "stl-merged"},
-            )
-        except Exception:  # noqa: BLE001
-            stl_asset = None
-        try:
-            preview = ctx.register_asset(
-                display_name="model preview", filename="model.glb",
-                data=pipeline.preview_glb(step), meta={"stage": "preview"},
-            )
-        except Exception:  # noqa: BLE001
-            preview = None
-        usd_asset = None
-        try:
-            usd_asset = ctx.register_asset(
-                display_name="model geometry (usd)", filename="model_geom.usda",
-                data=pipeline.geometry_usd(step), meta={"stage": "geometry-usd"},
-            )
-        except Exception:  # noqa: BLE001
-            usd_asset = None
+        shot_recs = []
+        for i, (view, png) in enumerate(res.get("shots", [])):
+            shot_recs.append(ctx.register_asset(f"shot {view}", f"shot_{i}_{view}.png", png, {"stage": "screenshot", "view": view}))
+        proxy_usd = proxy_stl = None
+        if res.get("proxy_usd"):
+            proxy_usd = ctx.register_asset("bbox proxy USD", "model_bbox.usd", res["proxy_usd"], {"stage": "proxy-usd"})
+        if res.get("proxy_stl"):
+            proxy_stl = ctx.register_asset("bbox proxy STL", "model_bbox.stl", res["proxy_stl"], {"stage": "proxy-stl"})
         return {
-            "engine": "Trinix CAD (MCP) · 구독 Claude 구동 · STEP export(파트 보존)",
-            "step_asset": step_asset,
-            "stl_asset": stl_asset,
-            "usd_asset": usd_asset,
-            "preview": preview,
-            "report": res.get("report", "")[-1500:],
+            "engine": "Trinix CAD (MCP) · 구독 Claude · 스크린샷 + bbox 프록시",
+            "shots": [r["download_url"] for r in shot_recs],
+            "shape_count": len(res.get("shapes", [])),
+            "shapes": res.get("shapes", []),
+            "proxy_usd": proxy_usd,
+            "proxy_stl": proxy_stl,
+            "report": res.get("report", "")[-1200:],
         }
 
     return {"job_id": jobs.submit(_job)}
