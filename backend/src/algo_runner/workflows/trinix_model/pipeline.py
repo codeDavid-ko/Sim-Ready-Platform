@@ -233,15 +233,15 @@ async def _shoot(mcp, width: int = 640, height: int = 512) -> list[tuple[str, by
 
     shots: list[tuple[str, bytes]] = []
     try:
-        shots += imgs(await mcp.call_tool("verify_views", {}), "ortho")
+        # verify_views: 한 번 호출로 front/right/top 정사영 → 라운드트립 최소화
+        shots += imgs(await asyncio.wait_for(mcp.call_tool("verify_views", {}), 60), "ortho")
     except Exception:  # noqa: BLE001
         pass
-    # 정사영 6면 + 사선 perspective 보강
-    for v in ("front", "right", "top", "back", "left"):
+    if not shots:
+        # 폴백: 정면 1장만
         try:
-            await mcp.call_tool("set_view", {"view": v})
-            await mcp.call_tool("fit_all", {})
-            shots += imgs(await mcp.call_tool("take_screenshot", {"width": width, "height": height}), v)
+            await asyncio.wait_for(mcp.call_tool("fit_all", {}), 20)
+            shots += imgs(await asyncio.wait_for(mcp.call_tool("take_screenshot", {"width": width, "height": height}), 30), "view")
         except Exception:  # noqa: BLE001
             pass
     return shots
@@ -332,20 +332,29 @@ async def _build_capture_async(images: list[tuple[bytes, str]], text: str, model
 
     from ...settings import get_settings
 
-    report = await _build_async(images, text, _RUNS / "_nx.bin", model)
+    # 빌드(에이전트)에 타임아웃 — Trinix 호출이 멈춰도 잡이 영원히 안 끝나는 것 방지.
+    try:
+        report = await asyncio.wait_for(_build_async(images, text, _RUNS / "_nx.bin", model), 420)
+    except asyncio.TimeoutError:
+        report = "(모델링 시간 초과 ~7분 — 현재까지 형상으로 캡처 시도. 에디터 MCP 연결(녹색) 확인 권장.)"
+    except Exception as e:  # noqa: BLE001
+        report = f"(빌드 오류: {type(e).__name__}: {str(e)[:200]})"
     s = get_settings()
     headers = {"Authorization": f"Bearer {s.trinix_ai_token}"}
     shapes, shots = [], []
-    async with streamablehttp_client(s.trinix_mcp_endpoint, headers=headers) as (r, w, _):
-        async with ClientSession(r, w) as mcp:
-            await mcp.initialize()
-            try:
-                t = "".join(getattr(c, "text", "") for c in (await mcp.call_tool("list_shapes", {})).content or [])
-                d = _json.loads(t[t.find("{"):t.rfind("}")+1]) if "{" in t else {}
-                shapes = d.get("shapes", []) if isinstance(d, dict) else []
-            except Exception:  # noqa: BLE001
-                shapes = []
-            shots = await _shoot(mcp)
+    try:
+        async with streamablehttp_client(s.trinix_mcp_endpoint, headers=headers) as (r, w, _):
+            async with ClientSession(r, w) as mcp:
+                await asyncio.wait_for(mcp.initialize(), 25)
+                try:
+                    t = "".join(getattr(c, "text", "") for c in (await asyncio.wait_for(mcp.call_tool("list_shapes", {}), 30)).content or [])
+                    d = _json.loads(t[t.find("{"):t.rfind("}")+1]) if "{" in t else {}
+                    shapes = d.get("shapes", []) if isinstance(d, dict) else []
+                except Exception:  # noqa: BLE001
+                    shapes = []
+                shots = await asyncio.wait_for(_shoot(mcp), 120)
+    except Exception as e:  # noqa: BLE001
+        report += f"\n(캡처 단계 오류/시간초과: {type(e).__name__})"
     return report, shapes, shots
 
 
