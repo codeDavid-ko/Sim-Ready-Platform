@@ -1,11 +1,11 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "에이전트 플랫폼",
-  description: "에이전트 플랫폼 — Sim-Ready 3D 워크플로우",
+  title: "Sim-Ready",
+  description: "Sim-Ready — NVIDIA Isaac/Omniverse용 3D Sim-Ready 워크플로우 플랫폼",
   openGraph: {
-    title: "에이전트 플랫폼",
-    description: "에이전트 플랫폼 — Sim-Ready 3D 워크플로우",
+    title: "Sim-Ready",
+    description: "Sim-Ready — NVIDIA Isaac/Omniverse용 3D Sim-Ready 워크플로우 플랫폼",
   },
 };
 

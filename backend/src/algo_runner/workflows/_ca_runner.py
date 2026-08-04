@@ -13,10 +13,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from . import jobs
+
 _DISTRO = "Ubuntu-24.04"
 _RUNS = Path(__file__).resolve().parents[3] / "_ca_runs"  # backend/_ca_runs
 _SUPPORTED = {".usd", ".usda", ".usdc", ".usdz"}
-_TIMEOUT = 1200
+_TIMEOUT = 2400  # 렌더 + 클러스터 단위 VLM 추론 여유(다부품 자산)
 
 
 def _to_wsl(p: Path) -> str:
@@ -34,15 +36,36 @@ def run_agent_card(agent: str, file_bytes: bytes | None, file_name: str | None, 
     rid = uuid.uuid4().hex[:12]
     rundir = _RUNS / rid
     rundir.mkdir(parents=True, exist_ok=True)
-    inp = rundir / f"input{ext}"
-    inp.write_bytes(file_bytes)
+    # content-agents 는 입력을 내부적으로 '_card_input.usd' 로 복사해 연다. usdz(zip)는 .usd 로
+    # 이름만 바뀌면 못 열린다("Failed to open layer") → geometry 를 단일 .usd 로 평탄화해 넘긴다.
+    # (재질/물리 추론은 형상만 필요 — 원본 텍스처는 어차피 에이전트가 새로 추론)
+    if ext == ".usdz":
+        from pxr import Usd, UsdGeom
+        tmp = rundir / "input.usdz"; tmp.write_bytes(file_bytes)
+        # 텍스트 .usda 로 평탄화 — content-agents(WSL)의 USD 와 crate 버전이 달라도 열리게(버전 무관).
+        inp = rundir / "input.usda"
+        try:
+            stage = Usd.Stage.Open(str(tmp))
+            if stage is None:
+                raise RuntimeError("usdz 열기 실패")
+            dp = stage.GetDefaultPrim()
+            if not (dp and dp.IsValid()):   # defaultPrim 없으면 첫 최상위 prim 으로(렌더 프레이밍용)
+                for p in stage.GetPseudoRoot().GetChildren():
+                    if p.IsA(UsdGeom.Imageable):
+                        stage.SetDefaultPrim(p); break
+            stage.Flatten().Export(str(inp))   # 패키지 → 단일 .usda 텍스트(형상 인라인)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"usdz 입력을 .usda 로 변환하지 못했습니다: {exc}") from None
+    else:
+        inp = rundir / f"input{ext}"           # .usd/.usda/.usdc 는 원본 그대로(텍스트/크레이트)
+        inp.write_bytes(file_bytes)
 
     cmd = [
         "wsl.exe", "-d", _DISTRO, "bash", "-lc",
         f"bash ~/content-agents/run_agent.sh {agent} '{_to_wsl(inp)}' '{_to_wsl(rundir)}'",
     ]
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT)
+        jobs.run(cmd, timeout=_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"{agent} 파이프라인 시간 초과({_TIMEOUT}s).") from None
     except FileNotFoundError:

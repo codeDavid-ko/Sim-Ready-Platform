@@ -1,7 +1,14 @@
 const KEY = "algo_runner_token";
 const USER_KEY = "algo_runner_user";
 
-export type SessionUser = { username: string; role: string };
+export type SessionUser = { username: string; role: string; cards?: string[] };
+
+/** 카드 접근 권한(표시용). admin 은 전체 허용. user 는 cards 목록에 있어야. */
+export function canUseCard(user: SessionUser | null, cardId: string): boolean {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  return Array.isArray(user.cards) && user.cards.includes(cardId);
+}
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;

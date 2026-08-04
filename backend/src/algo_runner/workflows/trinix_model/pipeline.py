@@ -61,7 +61,10 @@ def _task_prompt(image_paths: list[str], user_text: str, out_posix: str) -> str:
 각 shape 에 명확한 이름(resultUid)을 붙여라(예: wall_n, door_frame, bus_bar_1). 한 덩어리로 합치지 마라.
 
 [필수 마무리]
-1) 빌드가 끝나면 set_view 6면 + fit_all + take_screenshot 로 검증하고 bbox 를 보고한다.
+1) 빌드가 끝나면 fit_all 후 **verify_views 를 6면 전체로 한 번 호출**한다:
+   `verify_views {{"views": ["front", "back", "left", "right", "top", "bottom"]}}`
+   → 동·서·남·북·위·아래 6장을 캡처해 bbox 와 함께 보고한다. 이 6면 캡처가 **마지막 이미지 작업**이어야 하며,
+   이후에 추가 스크린샷(take_screenshot/verify_views)을 더 찍지 마라(서버가 마지막 6장을 회수한다).
 2) **export_scene 은 호출하지 마라.** 파일 내보내기는 서버가 별도로 처리한다. 너는 형상만 완성하고,
    마지막에 list_shapes 로 최종 형상 수·부품 이름(UID)을 확인해 그 목록을 요약 보고하고 종료한다.
 
@@ -69,7 +72,35 @@ def _task_prompt(image_paths: list[str], user_text: str, out_posix: str) -> str:
 """
 
 
-async def _build_async(images: list[tuple[bytes, str]], text: str, out_step: Path, model: str) -> str:
+def _collect_tool_images(block: Any, shots_out: list[tuple[str, bytes]]) -> None:
+    """SDK 메시지 블록에서 MCP 도구결과(take_screenshot/verify_views)의 이미지(base64)를 회수.
+    빌드와 *같은 세션* 캡처라 비지 않는다. dict/객체·여러 data 위치를 방어적으로 처리."""
+    import base64
+
+    tr = getattr(block, "content", None)  # ToolResultBlock.content (list) — 텍스트블록엔 없음
+    if not isinstance(tr, list):
+        return
+    for c in tr:
+        ctype = c.get("type") if isinstance(c, dict) else getattr(c, "type", None)
+        if ctype != "image":
+            continue
+        src = c.get("source") if isinstance(c, dict) else getattr(c, "source", None)
+        data = None
+        if isinstance(src, dict):
+            data = src.get("data")
+        elif src is not None:
+            data = getattr(src, "data", None)
+        if not data:  # 일부 SDK 는 블록에 data 직접
+            data = c.get("data") if isinstance(c, dict) else getattr(c, "data", None)
+        if data:
+            try:
+                shots_out.append(("ortho", base64.b64decode(data)))
+            except Exception:  # noqa: BLE001
+                pass
+
+
+async def _build_async(images: list[tuple[bytes, str]], text: str, out_step: Path, model: str,
+                       shots_out: list[tuple[str, bytes]] | None = None) -> str:
     from claude_agent_sdk import ClaudeAgentOptions, query
 
     from ...llm import _sync_env
@@ -107,6 +138,8 @@ async def _build_async(images: list[tuple[bytes, str]], text: str, out_step: Pat
                 t = getattr(block, "text", None)
                 if t:
                     out.append(t)
+                if shots_out is not None:
+                    _collect_tool_images(block, shots_out)
         return "".join(out).strip()
     finally:
         for p in tmp_imgs:
@@ -233,8 +266,9 @@ async def _shoot(mcp, width: int = 640, height: int = 512) -> list[tuple[str, by
 
     shots: list[tuple[str, bytes]] = []
     try:
-        # verify_views: 한 번 호출로 front/right/top 정사영 → 라운드트립 최소화
-        shots += imgs(await asyncio.wait_for(mcp.call_tool("verify_views", {}), 60), "ortho")
+        # verify_views: 6면(동서남북+위아래) 한 번 호출. 기본값은 3면(front/right/top)이라 명시해야 6장.
+        shots += imgs(await asyncio.wait_for(
+            mcp.call_tool("verify_views", {"views": ["front", "back", "left", "right", "top", "bottom"]}), 90), "ortho")
     except Exception:  # noqa: BLE001
         pass
     if not shots:
@@ -254,13 +288,19 @@ async def _build_and_shoot_async(images: list[tuple[bytes, str]], text: str, mod
 
     from ...settings import get_settings
 
-    report = await _build_async(images, text, _RUNS / "_noexport.bin", model)  # 빌드만(프롬프트가 export 안 함)
-    s = get_settings()
-    headers = {"Authorization": f"Bearer {s.trinix_ai_token}"}
-    async with streamablehttp_client(s.trinix_mcp_endpoint, headers=headers) as (r, w, _):
-        async with ClientSession(r, w) as mcp:
-            await mcp.initialize()
-            shots = await _shoot(mcp)
+    # 빌드 세션에서 에이전트가 찍는 스크린샷을 그대로 회수(같은 세션 → 안 빈다).
+    collected: list[tuple[str, bytes]] = []
+    report = await _build_async(images, text, _RUNS / "_noexport.bin", model, shots_out=collected)
+    # 마지막 검증 캡처(fit_all 후 6면)가 끝부분에 모인다 → 뒤에서 최대 6장 사용.
+    shots = collected[-6:]
+    if not shots:
+        # 폴백: 별도 raw MCP 세션에서 다시 캡처(빌드 세션과 분리돼 빈 장면일 수 있음 — 차선책).
+        s = get_settings()
+        headers = {"Authorization": f"Bearer {s.trinix_ai_token}"}
+        async with streamablehttp_client(s.trinix_mcp_endpoint, headers=headers) as (r, w, _):
+            async with ClientSession(r, w) as mcp:
+                await mcp.initialize()
+                shots = await _shoot(mcp)
     return report, shots
 
 

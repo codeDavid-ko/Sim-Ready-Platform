@@ -1,6 +1,7 @@
 "use client";
 
 import type { WorkflowManifest } from "@/workflows/registry";
+import { WfIcon } from "./icons";
 
 // 카테고리 표시 순서/라벨. 매니페스트의 category 키와 매칭.
 const CATEGORIES: { key: string; label: string }[] = [
@@ -15,9 +16,11 @@ const OTHER = { key: "__other__", label: "기타" };
 export function CardGrid({
   workflows,
   onSelect,
+  canUse,
 }: {
   workflows: WorkflowManifest[];
   onSelect: (m: WorkflowManifest) => void;
+  canUse?: (m: WorkflowManifest) => boolean;   // false면 🔒 권한 없음 표시(클릭은 onSelect 가 안내)
 }) {
   const visible = workflows.filter((w) => !w.hidden);
   if (visible.length === 0) {
@@ -45,16 +48,18 @@ export function CardGrid({
             {g.items.map((w) =>
               w.disabled ? (
                 <div key={w.id} className="wf-card disabled" title={w.disabledNote}>
-                  <div className="wf-icon">{w.icon ?? "▢"}</div>
+                  <div className="wf-icon"><WfIcon id={w.id} /></div>
                   <div className="wf-name">{w.name}</div>
                   <div className="wf-desc">{w.tagline ?? w.description}</div>
                   <div className="wf-lock">🔒 {w.disabledNote ?? "Disabled"}</div>
                 </div>
               ) : (
-                <button key={w.id} className="wf-card" onClick={() => onSelect(w)}>
-                  <div className="wf-icon">{w.icon ?? "▢"}</div>
+                <button key={w.id} className="wf-card" onClick={() => onSelect(w)}
+                  style={canUse && !canUse(w) ? { opacity: 0.6 } : undefined}>
+                  <div className="wf-icon"><WfIcon id={w.id} /></div>
                   <div className="wf-name">{w.name}</div>
                   <div className="wf-desc">{w.tagline ?? w.description}</div>
+                  {canUse && !canUse(w) && <div className="wf-lock">🔒 권한 없음</div>}
                 </button>
               ),
             )}

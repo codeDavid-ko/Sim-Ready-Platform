@@ -47,8 +47,35 @@ def _glb_from_parts(parts: list[tuple[str, np.ndarray, np.ndarray]], pbr_for) ->
 
 
 def glb_from_assignment_parts(parts, assignment: dict[str, Any]) -> bytes:
-    """material-usd: 정규화된 parts + assignment -> PBR GLB."""
-    return _glb_from_parts(parts, pbr_from_assignment(assignment))
+    """material-usd: 정규화된 parts + assignment -> PBR GLB. 부품 인덱스로 재질을 찾는다
+    (이름이 중복돼도 부품별로 다른 재질이 적용되도록). 인덱스 없으면 이름→기본키로 폴백."""
+    import trimesh
+    from trimesh.visual.material import PBRMaterial
+
+    parts_map = assignment.get("parts", {})
+    palette = assignment.get("palette", {})
+
+    scene = trimesh.Scene()
+    seen: dict[str, int] = {}
+    for i, (name, V, F) in enumerate(parts):
+        key = parts_map.get(str(i)) or parts_map.get(name) or parts_map.get("__default__", "default")
+        spec = palette.get(key, {})
+        inp = spec.get("inputs", {})
+        col = inp.get("paint_color") or inp.get("diffuse_color") or [0.7, 0.7, 0.7]
+        rough = inp.get("paint_roughness")
+        metal = _is_metal(spec.get("mdl", ""), spec.get("subId", ""), key)
+        rgba = [int(max(0.0, min(1.0, c)) * 255) for c in list(col)[:3]] + [255]
+        mat = PBRMaterial(
+            baseColorFactor=rgba,
+            metallicFactor=1.0 if metal else 0.0,
+            roughnessFactor=float(rough) if rough is not None else (0.4 if metal else 0.7),
+        )
+        mesh = trimesh.Trimesh(vertices=np.asarray(V, dtype=np.float64), faces=np.asarray(F, dtype=np.int64))
+        mesh.visual = trimesh.visual.TextureVisuals(material=mat)
+        seen[name] = seen.get(name, 0) + 1
+        node = name if seen[name] == 1 else f"{name}_{seen[name]}"
+        scene.add_geometry(mesh, node_name=node)
+    return scene.export(file_type="glb")
 
 
 def glb_from_usd(usd_bytes: bytes) -> bytes:

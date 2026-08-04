@@ -14,7 +14,7 @@ from .auth import require_auth
 
 router = APIRouter(prefix="/api", tags=["run"])
 
-_MAX_FILE = 50 * 1024 * 1024  # 50MB
+_MAX_FILE = 1024 * 1024 * 1024  # 1GB
 
 
 @router.post("/run")
@@ -32,7 +32,7 @@ async def run(
     if file is not None:
         file_bytes = await file.read()
         if len(file_bytes) > _MAX_FILE:
-            raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 50MB).")
+            raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 1GB).")
         file_name = file.filename
 
     try:

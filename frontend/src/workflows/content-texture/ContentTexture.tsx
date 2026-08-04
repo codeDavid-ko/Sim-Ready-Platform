@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
+import { blobUrl, CancelledError, downloadFile, submitAndPoll } from "@/lib/api";
+import JobProgress from "../JobProgress";
 import type { WorkflowModuleProps } from "../registry";
+import Tip from "../Tip";
 import SpinViewer from "../SpinViewer";
 
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
@@ -28,40 +30,14 @@ export default function ContentTexture({ manifest }: WorkflowModuleProps) {
   const [result, setResult] = useState<Result | null>(null);
   const [glbSrc, setGlbSrc] = useState<string | null>(null);
   const glbRef = useRef<string | null>(null);
-  const [isaacVid, setIsaacVid] = useState<string | null>(null);
-  const [isaacBusy, setIsaacBusy] = useState(false);
-  const [isaacErr, setIsaacErr] = useState<string | null>(null);
-  const isaacRefs = useRef<string[]>([]);
+  const acRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     import("@google/model-viewer").catch(() => {});
     return () => {
       if (glbRef.current) URL.revokeObjectURL(glbRef.current);
-      isaacRefs.current.forEach((u) => URL.revokeObjectURL(u));
     };
   }, []);
-
-  async function runIsaac() {
-    if (!result?.usdz_asset) return;
-    setIsaacErr(null);
-    setIsaacBusy(true);
-    try {
-      const fd = new FormData();
-      fd.append("asset_id", result.usdz_asset.id);
-      const r = await submitAndPoll<{ video: { download_url: string } | null }>(
-        `/api/workflows/${WF}/render-submit`, fd,
-      );
-      if (r.video?.download_url) {
-        const u = await blobUrl(r.video.download_url);
-        isaacRefs.current.push(u);
-        setIsaacVid(u);
-      }
-    } catch (err) {
-      setIsaacErr(String((err as Error).message));
-    } finally {
-      setIsaacBusy(false);
-    }
-  }
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -72,10 +48,12 @@ export default function ContentTexture({ manifest }: WorkflowModuleProps) {
       return;
     }
     setBusy(true);
+    const ac = new AbortController();
+    acRef.current = ac;
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/submit`, fd);
+      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/submit`, fd, { signal: ac.signal });
       setResult(r);
       if (r.preview?.download_url) {
         try {
@@ -86,9 +64,10 @@ export default function ContentTexture({ manifest }: WorkflowModuleProps) {
         } catch { setGlbSrc(null); }
       }
     } catch (err) {
-      setError(String((err as Error).message));
+      setError(err instanceof CancelledError ? "취소되었습니다." : String((err as Error).message));
     } finally {
       setBusy(false);
+      acRef.current = null;
     }
   }
 
@@ -99,12 +78,13 @@ export default function ContentTexture({ manifest }: WorkflowModuleProps) {
       <div className="card">
         <p className="muted">{manifest.description}</p>
         <form onSubmit={run}>
-          <label>USD 파일 ({accept})</label>
+          <label>USD 파일 ({accept})<Tip t="텍스처/재질을 추론할 USD를 업로드합니다. NVIDIA content-agents가 부품별로 재질·텍스처를 배정합니다." /></label>
           <input type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           <p className="muted">WSL2에서 멀티뷰 렌더 + 부품별 구독 Claude VLM으로 재질/텍스처를 추론합니다. 텍스처 <b>생성</b>은 NVIDIA_API_KEY가 있을 때만. <b>수 분</b> 소요.</p>
           <div style={{ marginTop: 12 }}>
-            <button type="submit" disabled={busy}>{busy ? "실행 중… (수 분)" : "텍스처 추론 실행 (NVIDIA)"}</button>
+            <button type="submit" disabled={busy}>{busy ? "실행 중…" : "텍스처 추론 실행 (NVIDIA)"}</button>
           </div>
+          <JobProgress busy={busy} onCancel={() => acRef.current?.abort()} etaSec={780} hint="멀티뷰 렌더 + 부품별 VLM" />
         </form>
       </div>
 
@@ -147,29 +127,17 @@ export default function ContentTexture({ manifest }: WorkflowModuleProps) {
               <label style={{ margin: 0 }}>결과 USD</label>
               {result.asset && <span className="badge ok">저장소 등록됨</span>}
             </div>
-            {result.asset && (
-              <>
-                <p className="muted">{result.asset.filename} · {(result.asset.bytes / 1024).toFixed(1)} KB</p>
-                <div className="row" style={{ marginTop: 8 }}>
-                  <button className="ghost" onClick={() => downloadFile(result.asset!.download_url, result.asset!.filename)}>USD 다운로드</button>
-                </div>
-              </>
-            )}
+            <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+              {(result.usdz_asset || result.asset) && (
+                <button onClick={() => { const a = result.usdz_asset ?? result.asset!; downloadFile(a.download_url, a.filename); }}>재질/텍스처 USD 다운로드</button>
+              )}
+            </div>
           </div>
           {result.usdz_asset && (
             <div className="card">
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <label style={{ margin: 0 }}>Omniverse 렌더 (360° 회전 · RTX)</label>
-                <button className="ghost" onClick={runIsaac} disabled={isaacBusy}>
-                  {isaacBusy ? "렌더 중… (Isaac Sim)" : "Omniverse로 렌더"}
-                </button>
-              </div>
-              <p className="muted">결과를 USDZ로 묶어 Isaac Sim RTX로 360° 회전 렌더. (약 1~2분)</p>
-              {isaacErr && <p className="err">{isaacErr}</p>}
-              {isaacVid && (
-                <video src={isaacVid} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 8, background: "#0d1117" }} />
-              )}
-              <SpinViewer assetId={result.usdz_asset.id} label="🖱 인터랙티브 RTX 뷰어 (드래그로 회전)" />
+              <label style={{ margin: 0 }}>인터랙티브 RTX 뷰어 (좌우 회전·상하 고도·휠 확대)</label>
+              <p className="muted">결과를 USDZ로 묶어 Isaac Sim RTX로 렌더 후 마우스로 돌려봅니다.</p>
+              <SpinViewer assetId={result.usdz_asset.id} label="🖱 RTX 뷰어 열기 (드래그·휠)" />
             </div>
           )}
           {result.log_tail && (

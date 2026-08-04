@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
+import { blobUrl, CancelledError, downloadAsset, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
 import SpinViewer from "../SpinViewer";
+import JobProgress from "../JobProgress";
+import Tip from "../Tip";
 
 type Row = {
   part: string;
@@ -16,8 +18,11 @@ type Result = {
   in_units: string;
   up_axis: string;
   rows: Row[];
+  input_cleaned?: boolean;
+  clean_meshes?: number;
   content_asset: AssetRec | null;
   content_status: string;
+  content_error?: string | null;
   preview_material_usd?: AssetRec | null;
   preview_content?: AssetRec | null;
   render_material_usd?: AssetRec | null;
@@ -39,38 +44,12 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
   const [srcA, setSrcA] = useState<string | null>(null);
   const [srcB, setSrcB] = useState<string | null>(null);
   const refs = useRef<string[]>([]);
-  // Omniverse 렌더 (양쪽)
-  const [omniA, setOmniA] = useState<string | null>(null);
-  const [omniB, setOmniB] = useState<string | null>(null);
-  const [omniBusy, setOmniBusy] = useState<"" | "A" | "B">("");
-  const [omniErr, setOmniErr] = useState<string | null>(null);
+  const acRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     import("@google/model-viewer").catch(() => {});
     return () => { refs.current.forEach((u) => URL.revokeObjectURL(u)); };
   }, []);
-
-  async function runOmni(assetId: string, which: "A" | "B") {
-    setOmniErr(null);
-    setOmniBusy(which);
-    try {
-      const fd = new FormData();
-      fd.append("asset_id", assetId);
-      // material-usd 의 render-submit 은 asset_id 로 임의 등록 에셋을 Isaac 렌더한다(양쪽 공용)
-      const r = await submitAndPoll<{ video: { download_url: string } | null }>(
-        `/api/workflows/material-usd/render-submit`, fd,
-      );
-      if (r.video?.download_url) {
-        const u = await blobUrl(r.video.download_url);
-        refs.current.push(u);
-        (which === "A" ? setOmniA : setOmniB)(u);
-      }
-    } catch (err) {
-      setOmniErr(String((err as Error).message));
-    } finally {
-      setOmniBusy("");
-    }
-  }
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -81,12 +60,14 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
       return;
     }
     setBusy(true);
+    const ac = new AbortController();
+    acRef.current = ac;
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("text", text);
       for (const img of images) fd.append("images", img);
-      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/compare-submit`, fd);
+      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/compare-submit`, fd, { signal: ac.signal });
       setResult(r);
       for (const [rec, set] of [
         [r.preview_material_usd, setSrcA] as const,
@@ -101,9 +82,11 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
         }
       }
     } catch (err) {
-      setError(String((err as Error).message));
+      if (err instanceof CancelledError) setError("취소되었습니다.");
+      else setError(String((err as Error).message));
     } finally {
       setBusy(false);
+      acRef.current = null;
     }
   }
 
@@ -114,9 +97,9 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
         <form onSubmit={run}>
           <label>USD 파일 ({accept})</label>
           <input type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          <label>재질 힌트 (선택, NdotLight 쪽 분류에 사용)</label>
+          <label>재질 힌트 (선택, NdotLight 쪽 분류에 사용)<Tip t="재질 추론을 돕는 한 줄 설명. 공정 비교를 위해 NdotLight(material-usd) 엔진에만 전달되고 NVIDIA 쪽엔 주지 않습니다." /></label>
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="예: 알루미늄 사다리, 발끝은 고무" />
-          <label>참조 이미지 (선택 · <b>NdotLight 쪽에만</b> 전달)</label>
+          <label>참조 이미지 (선택 · <b>NdotLight 쪽에만</b> 전달)<Tip t="실물 사진. NdotLight 엔진이 색·외형으로 재질을 고를 때 참고합니다. NVIDIA는 자체 멀티뷰 렌더를 써서 이 이미지를 받지 않습니다(형상은 양쪽 동일)." /></label>
           <input type="file" accept="image/*" multiple onChange={(e) => setImages(Array.from(e.target.files ?? []))} />
           <p className="muted">
             이미지를 넣으면 NdotLight(material-usd)는 실제 색/외형을 보고 vMaterials를 고릅니다.
@@ -125,8 +108,9 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
           </p>
           <p className="muted">두 엔진을 모두 실행합니다 — <b>수 분</b> 소요(특히 NVIDIA 쪽 WSL 렌더).</p>
           <div style={{ marginTop: 12 }}>
-            <button type="submit" disabled={busy}>{busy ? "두 엔진 실행 중… (수 분)" : "비교 실행"}</button>
+            <button type="submit" disabled={busy}>{busy ? "두 엔진 실행 중…" : "비교 실행"}</button>
           </div>
+          <JobProgress busy={busy} onCancel={() => acRef.current?.abort()} etaSec={780} hint="NVIDIA 렌더 포함, 부품 많으면 더" />
         </form>
       </div>
 
@@ -156,39 +140,31 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
           )}
           {(result.render_material_usd || result.render_content) && (
             <div className="card">
-              <label>Omniverse 렌더 (Isaac Sim RTX · 실제 재질 · 여러 각도)</label>
-              {omniErr && <p className="err">{omniErr}</p>}
+              <label>인터랙티브 RTX 뷰어 (실제 재질 · 좌우 회전·상하 고도·휠 확대)</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <span className="muted">material-usd (vMaterials)</span>
-                    {result.render_material_usd && (
-                      <button className="ghost" onClick={() => runOmni(result.render_material_usd!.id, "A")} disabled={omniBusy !== ""}>
-                        {omniBusy === "A" ? "렌더 중…" : "Omniverse"}
-                      </button>
-                    )}
-                  </div>
-                  {omniA && <video src={omniA} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 6, background: "#0d1117", marginTop: 6 }} />}
-                  {result.render_material_usd && <SpinViewer assetId={result.render_material_usd.id} label="🖱 인터랙티브 RTX (드래그 회전)" />}
+                  <div className="muted" style={{ marginBottom: 4 }}>material-usd (vMaterials)</div>
+                  {result.render_material_usd
+                    ? <SpinViewer assetId={result.render_material_usd.id} label="🖱 RTX 뷰어 열기 (드래그·휠)" />
+                    : <p className="muted">없음</p>}
                 </div>
                 <div>
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <span className="muted">NVIDIA content-agents</span>
-                    {result.render_content && (
-                      <button className="ghost" onClick={() => runOmni(result.render_content!.id, "B")} disabled={omniBusy !== ""}>
-                        {omniBusy === "B" ? "렌더 중…" : "Omniverse"}
-                      </button>
-                    )}
-                  </div>
-                  {omniB && <video src={omniB} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 6, background: "#0d1117", marginTop: 6 }} />}
-                  {result.render_content && <SpinViewer assetId={result.render_content.id} label="🖱 인터랙티브 RTX (드래그 회전)" />}
+                  <div className="muted" style={{ marginBottom: 4 }}>NVIDIA content-agents</div>
+                  {result.render_content
+                    ? <SpinViewer assetId={result.render_content.id} label="🖱 RTX 뷰어 열기 (드래그·휠)" />
+                    : <p className="muted">없음</p>}
                 </div>
               </div>
-              <p className="muted" style={{ marginTop: 6 }}>각 ~수십 초~1분 (Isaac Sim 부팅+RTX). content는 결과를 usdz로 묶어 렌더.</p>
+              <p className="muted" style={{ marginTop: 6 }}>버튼을 누르면 Isaac RTX로 프레임을 렌더(수십 초~수 분) 후 마우스로 돌려볼 수 있습니다.</p>
             </div>
           )}
           <div className="card">
             <label>부품별 재질 비교 — {result.input} ({result.in_units}, {result.up_axis}-up)</label>
+            {result.input_cleaned && (
+              <p className="muted" style={{ fontSize: 12 }}>
+                ⓘ 공정 비교를 위해 입력을 맨 지오메트리로 정리했습니다 — 거대 환경 평면·baked 재질 제거 + 단위 정규화{result.clean_meshes ? ` · 부품 ${result.clean_meshes}개` : ""}. 두 엔진이 같은 자산에서 재질을 새로 추론합니다.
+              </p>
+            )}
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "2px solid #e3e6ea" }}>
@@ -220,27 +196,23 @@ export default function MaterialCompare({ manifest }: WorkflowModuleProps) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
                 <div>
                   <div className="muted" style={{ marginBottom: 4 }}>NdotLight (material-usd · vMaterials)</div>
-                  {result.render_material_usd ? (
-                    <>
-                      <p className="muted">{result.render_material_usd.filename} · {(result.render_material_usd.bytes / 1024).toFixed(1)} KB</p>
-                      <button className="ghost" onClick={() => downloadFile(result.render_material_usd!.download_url, result.render_material_usd!.filename)}>USD 다운로드</button>
-                    </>
-                  ) : <p className="muted">생성 실패/없음</p>}
+                  {result.render_material_usd
+                    ? <button onClick={() => downloadAsset(result.render_material_usd!.download_url, result.render_material_usd!.filename)}>재질 USD 다운로드</button>
+                    : <p className="muted">생성 실패/없음</p>}
                 </div>
                 <div>
                   <div className="row" style={{ justifyContent: "space-between" }}>
                     <span className="muted">NVIDIA content-agents</span>
-                    {result.content_status && <span className="badge ok">{result.content_status}</span>}
+                    {result.content_status && <span className={`badge ${result.content_asset ? "ok" : "warn"}`}>{result.content_status}</span>}
                   </div>
-                  {result.content_asset ? (
-                    <>
-                      <p className="muted">{result.content_asset.filename} · {(result.content_asset.bytes / 1024).toFixed(1)} KB</p>
-                      <button className="ghost" onClick={() => downloadFile(result.content_asset!.download_url, result.content_asset!.filename)}>USD 다운로드</button>
-                    </>
+                  {result.render_content || result.content_asset ? (
+                    <button onClick={() => { const a = result.render_content ?? result.content_asset!; downloadAsset(a.download_url, a.filename); }}>재질 USD 다운로드</button>
+                  ) : result.content_error ? (
+                    <p className="err" style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>NVIDIA 실패: {result.content_error}</p>
                   ) : <p className="muted">생성 실패/없음</p>}
                 </div>
               </div>
-              <p className="muted" style={{ marginTop: 6 }}>NdotLight은 자기완결 vMaterials USD(.usda), content-agents는 자체 결과 USD입니다.</p>
+              <p className="muted" style={{ marginTop: 6 }}>NdotLight은 자기완결 vMaterials USD(형상+재질), content-agents는 형상 포함 USDZ를 권장합니다.</p>
             </div>
           )}
         </>

@@ -27,7 +27,7 @@ from ..material_usd import pipeline as mu
 router = APIRouter(tags=["material-compare"])
 
 _SUPPORTED = {".usd", ".usda", ".usdc", ".usdz"}
-_MAX_FILE = 100 * 1024 * 1024
+_MAX_FILE = 1024 * 1024 * 1024  # 1GB
 
 
 def _usd_units(file_bytes: bytes, ext: str) -> tuple[str, str]:
@@ -60,6 +60,23 @@ def _compare_work(
     s = get_settings()
     imgs = images or []
     ext = PurePath(name).suffix.lower()
+    # 공정 비교: 입력을 '맨 지오메트리'로 정리해 두 엔진에 같은 자산을 준다.
+    # (거대 환경 평면 제거 + 잘못된 단위 정규화 + baked 재질 바인딩 제거.) NVIDIA content-agent
+    # 는 원래 raw 지오메트리 → 재질 추론 도구라, 깨진 baked 재질/평면이 있으면 멀티뷰 렌더가
+    # 빈 화면이 돼 실패한다. 에이전트 로직은 그대로, 입력만 동일하게 정리.
+    input_cleaned = False
+    clean_meshes = 0
+    if ext in (".usd", ".usda", ".usdc", ".usdz"):
+        try:
+            data, _ci = mu.clean_for_inference(data, name)
+            input_cleaned = True
+            clean_meshes = int(_ci.get("mesh_count", 0))
+            # clean_for_inference 는 항상 바이너리 crate 를 반환한다 → 이후 모든 USD 읽기가
+            # 원본 확장자(.usda/.usdz)로 crate 를 텍스트/zip 으로 열다 실패하지 않게 .usd 로 맞춘다.
+            name = PurePath(name).stem + ".usd"
+            ext = ".usd"
+        except Exception:  # noqa: BLE001 -- 정리는 best-effort
+            input_cleaned = False
     in_units, up_axis = _usd_units(data, ext)
 
     # (A) material-usd — classify 는 async → 이 스레드 전용 루프로 실행.
@@ -72,17 +89,29 @@ def _compare_work(
         )
     )
 
-    # (B) content-agents — 동기(WSL subprocess)
+    # (B) content-agents — 동기(WSL subprocess). 한쪽이 실패해도 다른 쪽 결과는 보여준다
+    # (예: 입력 USD에 거대 환경 평면이 있으면 NVIDIA 멀티뷰 렌더가 빈 화면→실패). NVIDIA
+    # 에이전트 자체는 비교 기준이라 손대지 않고, 실패 사유만 표면화한다.
     ctx_b = registry.WorkflowContext(workflow_id="content-material")
-    res_b = cm.run({}, data, name, ctx_b)
+    content_error = None
+    try:
+        res_b = cm.run({}, data, name, ctx_b)
+    except Exception as exc:  # noqa: BLE001
+        res_b = {}
+        content_error = str(exc)
 
-    a_parts = asg_a.get("parts", {})
+    # material-usd assignment 은 부품 인덱스 키("0","1",...)다(이름 중복 대비). content-agents
+    # bindings 는 부품 이름 키 → 비교 조인을 위해 ours 를 이름 키로 환산한다(중복명은 대표 1개).
+    a_parts_idx = asg_a.get("parts", {})
+    a_summaries = parts_json.get("parts", [])
+    a_default = a_parts_idx.get("__default__")
+    a_parts = {p["name"]: (a_parts_idx.get(str(i)) or a_default) for i, p in enumerate(a_summaries)}
     a_palette = asg_a.get("palette", {})
     b_bindings = res_b.get("bindings", {})
-    names = sorted({k for k in a_parts if k != "__default__"} | set(b_bindings.keys()))
+    names = sorted(set(a_parts) | set(b_bindings.keys()))
     rows = []
     for part in names:
-        key_a = a_parts.get(part) or a_parts.get("__default__")
+        key_a = a_parts.get(part) or a_default
         spec_a = a_palette.get(key_a, {})
         rows.append(
             {
@@ -103,9 +132,11 @@ def _compare_work(
             "material-compare", "material-usd preview", "material_usd_preview.glb", glb_a, {"engine": "material-usd"}
         )
         # Isaac 렌더용 자기완결 vMaterials USD
-        usda, _info = mu.build(data, name, in_units, up_axis, asg_a)
+        usd_crate, _info = mu.build(data, name, in_units, up_axis, asg_a)
+        # mu.build 는 바이너리 crate 를 반환한다 → 반드시 .usd 로 저장(.usda 로 두면 Isaac 이
+        # 텍스트로 파싱하려다 스테이지 로드 실패 → "No stage found").
         render_a = storage.register_asset(
-            "material-compare", "material-usd USD", f"{stem}_material_usd.usda", usda, {"engine": "material-usd"}
+            "material-compare", "material-usd USD", f"{stem}_material_usd.usd", usd_crate, {"engine": "material-usd"}
         )
     except Exception:  # noqa: BLE001
         pass
@@ -115,9 +146,12 @@ def _compare_work(
         "input": name,
         "in_units": in_units,
         "up_axis": up_axis,
+        "input_cleaned": input_cleaned,
+        "clean_meshes": clean_meshes,
         "rows": rows,
         "content_asset": res_b.get("asset"),
-        "content_status": res_b.get("status"),
+        "content_status": res_b.get("status") or ("실패" if content_error else None),
+        "content_error": content_error,
         "preview_material_usd": preview_a,
         "preview_content": res_b.get("preview"),
         "render_material_usd": render_a,            # Isaac 렌더용(자기완결 vMaterials USD)
@@ -128,7 +162,7 @@ def _compare_work(
 async def _read_validate(file: UploadFile) -> tuple[bytes, str]:
     data = await file.read()
     if len(data) > _MAX_FILE:
-        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 100MB).")
+        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 1GB).")
     name = file.filename or "asset.usd"
     if PurePath(name).suffix.lower() not in _SUPPORTED:
         raise HTTPException(status_code=400, detail="USD 형식만 비교 가능합니다(두 엔진 공통 입력).")

@@ -20,7 +20,7 @@ from . import pipeline
 
 router = APIRouter(tags=["trinix-model"])
 _WF_ID = "trinix-model"
-_MAX_FILE = 30 * 1024 * 1024
+_MAX_FILE = 1024 * 1024 * 1024  # 1GB
 
 
 @router.get("/ready")
@@ -42,7 +42,7 @@ async def submit(
     for im in images:
         b = await im.read()
         if len(b) > _MAX_FILE:
-            raise HTTPException(status_code=413, detail="이미지가 너무 큽니다(최대 30MB).")
+            raise HTTPException(status_code=413, detail="이미지가 너무 큽니다(최대 1GB).")
         if b:
             imgs.append((b, im.content_type or "image/jpeg"))
     prompt = text.strip()

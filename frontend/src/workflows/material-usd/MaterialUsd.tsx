@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
-import { authHeaders } from "@/lib/auth";
+import { blobUrl, CancelledError, downloadAsset, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
 import SpinViewer from "../SpinViewer";
+import JobProgress from "../JobProgress";
+import Tip from "../Tip";
 
 type PartsJson = {
   input: string;
@@ -12,17 +13,11 @@ type PartsJson = {
   up_axis: string;
   part_count: number;
   parts: { name: string; size_mm: number[]; vertex_count: number }[];
+  extract_ms?: number;  // 서버측 순수 형상 특징 추출(LLM 인풋) 시간 — GLB/디스플레이 제외
 };
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 
 const WF = "material-usd";
-
-async function postForm(path: string, fd: FormData): Promise<any> {
-  const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers: authHeaders(), body: fd });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.detail ?? `오류 (${res.status})`);
-  return body;
-}
 
 export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
   const accept =
@@ -32,6 +27,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inferMs, setInferMs] = useState<number | null>(null);   // 재질 분류(추론) 소요시간(ms)
 
   // step 0
   const [file, setFile] = useState<File | null>(null);
@@ -53,16 +49,12 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
   const [addLight, setAddLight] = useState(true);
 
   // step 3
-  const [result, setResult] = useState<{ asset: AssetRec; preview?: AssetRec | null; info: any; usd_preview: string } | null>(null);
+  const [result, setResult] = useState<{ asset: AssetRec; usdz_asset?: AssetRec | null; preview?: AssetRec | null; info: any; usd_preview: string } | null>(null);
   const [resultGlb, setResultGlb] = useState<string | null>(null);
   const resultGlbRef = useRef<string | null>(null);
-  // Omniverse(Isaac) 멀티앵글 렌더
-  const [isaacVid, setIsaacVid] = useState<string | null>(null);
-  const [isaacBusy, setIsaacBusy] = useState(false);
-  const [isaacErr, setIsaacErr] = useState<string | null>(null);
-  const isaacRefs = useRef<string[]>([]);
 
   const glbRef = useRef<string | null>(null);
+  const acRef = useRef<AbortController | null>(null);  // 현재 단계 취소용
 
   // model-viewer 웹 컴포넌트 등록 (클라이언트 전용)
   useEffect(() => {
@@ -83,12 +75,16 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       return;
     }
     setBusy(true);
+    const ac = new AbortController();
+    acRef.current = ac;
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("in_units", inUnits);
       fd.append("up_axis", upAxis);
-      const r = await postForm(`/api/workflows/${WF}/ingest`, fd);
+      const r = await submitAndPoll<{ parts: PartsJson; glb: AssetRec }>(
+        `/api/workflows/${WF}/ingest-submit`, fd, { signal: ac.signal },
+      );
       setParts(r.parts);
       try {
         const url = await blobUrl(r.glb.download_url);
@@ -100,9 +96,10 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       }
       setStep(1);
     } catch (err) {
-      setError(String((err as Error).message));
+      setError(err instanceof CancelledError ? "취소되었습니다." : String((err as Error).message));
     } finally {
       setBusy(false);
+      acRef.current = null;
     }
   }
 
@@ -111,20 +108,28 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
     setError(null);
     if (!parts) return;
     setBusy(true);
+    setInferMs(null);
+    const t0 = Date.now();
+    const ac = new AbortController();
+    acRef.current = ac;
     try {
       const fd = new FormData();
       fd.append("parts", JSON.stringify(parts));
       fd.append("mode", mode);
       fd.append("text", text);
       for (const im of images) fd.append("images", im);
-      const r = await postForm(`/api/workflows/${WF}/classify`, fd);
+      const r = await submitAndPoll<{ assignment: any; llm_used: boolean }>(
+        `/api/workflows/${WF}/classify-submit`, fd, { signal: ac.signal },
+      );
       setAssignmentText(JSON.stringify(r.assignment, null, 2));
       setLlmUsed(r.llm_used);
       setStep(2);
     } catch (err) {
-      setError(String((err as Error).message));
+      setError(err instanceof CancelledError ? "취소되었습니다." : String((err as Error).message));
     } finally {
       setBusy(false);
+      acRef.current = null;
+      setInferMs(Date.now() - t0);
     }
   }
 
@@ -139,6 +144,8 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       return;
     }
     setBusy(true);
+    const ac = new AbortController();
+    acRef.current = ac;
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -146,7 +153,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       fd.append("up_axis", upAxis);
       fd.append("assignment", JSON.stringify(asg));
       fd.append("add_light", String(addLight));
-      const r = await postForm(`/api/workflows/${WF}/build`, fd);
+      const r = await submitAndPoll<any>(`/api/workflows/${WF}/build-submit`, fd, { signal: ac.signal });
       setResult(r);
       if (r.preview?.download_url) {
         try {
@@ -158,31 +165,10 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       }
       setStep(3);
     } catch (err) {
-      setError(String((err as Error).message));
+      setError(err instanceof CancelledError ? "취소되었습니다." : String((err as Error).message));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function runIsaac() {
-    if (!result?.asset) return;
-    setIsaacErr(null);
-    setIsaacBusy(true);
-    try {
-      const fd = new FormData();
-      fd.append("asset_id", result.asset.id);
-      const r = await submitAndPoll<{ video: { download_url: string } | null }>(
-        `/api/workflows/${WF}/render-submit`, fd,
-      );
-      if (r.video?.download_url) {
-        const u = await blobUrl(r.video.download_url);
-        isaacRefs.current.push(u);
-        setIsaacVid(u);
-      }
-    } catch (err) {
-      setIsaacErr(String((err as Error).message));
-    } finally {
-      setIsaacBusy(false);
+      acRef.current = null;
     }
   }
 
@@ -190,10 +176,6 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
     setStep(0);
     setParts(null);
     setResult(null);
-    setIsaacVid(null);
-    setIsaacErr(null);
-    isaacRefs.current.forEach((u) => URL.revokeObjectURL(u));
-    isaacRefs.current = [];
     setAssignmentText("");
     setLlmUsed(null);
     if (glbRef.current) {
@@ -204,6 +186,53 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
   }
 
   const steps = ["1. 형상 업로드", "2. 재질 분류", "3. 검수", "4. USD 생성"];
+
+  // assignment(JSON) + 부품 목록 → 부품별 재질 행. 부품 이름은 parts, 재질키는 index 로 조인.
+  function materialRows(): { name: string; size: string; mat: string; mdl: string; reason: string }[] {
+    if (!parts) return [];
+    let asg: any;
+    try { asg = JSON.parse(assignmentText); } catch { return []; }
+    const pmap = asg?.parts ?? {};
+    const pal = asg?.palette ?? {};
+    const rmap = asg?.part_reason ?? {};
+    const def = pmap.__default__;
+    return parts.parts.map((p, i) => {
+      const key = pmap[String(i)] ?? def;
+      const spec = pal[key] ?? {};
+      return { name: p.name, size: (p.size_mm || []).join(" × "), mat: spec.subId ?? key ?? "—", mdl: spec.mdl ?? "", reason: rmap[String(i)] ?? "" };
+    });
+  }
+
+  function MaterialTable() {
+    const rows = materialRows();
+    if (!rows.length) return null;
+    const distinct = new Set(rows.map((r) => r.mat)).size;
+    return (
+      <div style={{ overflowX: "auto", marginTop: 4 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ textAlign: "left", borderBottom: "2px solid var(--vsc-border)" }}>
+              <th style={{ padding: "6px 8px" }}>부품</th>
+              <th style={{ padding: "6px 8px" }}>크기(mm)</th>
+              <th style={{ padding: "6px 8px" }}>재질 (vMaterials)</th>
+              <th style={{ padding: "6px 8px" }}>AI 선정 이유</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid var(--vsc-border)" }} title={r.mdl}>
+                <td style={{ padding: "6px 8px", fontWeight: 600 }}>{r.name}</td>
+                <td style={{ padding: "6px 8px" }} className="muted">{r.size}</td>
+                <td style={{ padding: "6px 8px" }}>{r.mat}{r.mdl ? <span className="muted" style={{ fontSize: 11 }}> · {r.mdl}</span> : null}</td>
+                <td style={{ padding: "6px 8px", maxWidth: 280 }} className="muted">{r.reason || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>부품 {rows.length}개 · 서로 다른 재질 {distinct}종</p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -228,7 +257,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
             <input type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             <div className="row" style={{ gap: 16 }}>
               <div style={{ flex: 1 }}>
-                <label>입력 단위</label>
+                <label>입력 단위<Tip t="업로드한 형상의 좌표 단위. 부품 크기(mm) 환산 기준이라 틀리면 스케일이 어긋납니다. SolidWorks STEP은 보통 m." /></label>
                 <select value={inUnits} onChange={(e) => setInUnits(e.target.value)} style={selectStyle}>
                   <option value="m">m (SolidWorks STEP 기본)</option>
                   <option value="mm">mm</option>
@@ -236,7 +265,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
                 </select>
               </div>
               <div style={{ flex: 1 }}>
-                <label>Up 축</label>
+                <label>Up 축<Tip t="형상에서 어느 축이 위(중력 반대)인지. 잘못 고르면 모델이 눕거나 뒤집혀 보입니다. SolidWorks는 보통 Y-up." /></label>
                 <select value={upAxis} onChange={(e) => setUpAxis(e.target.value)} style={selectStyle}>
                   <option value="Y">Y-up (SolidWorks 기본)</option>
                   <option value="Z">Z-up</option>
@@ -245,6 +274,7 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
             </div>
             <div style={{ marginTop: 12 }}>
               <button type="submit" disabled={busy}>{busy ? "형상 분석 중…" : "형상 분석 (ingest)"}</button>
+              <JobProgress busy={busy} onCancel={() => acRef.current?.abort()} />
             </div>
           </form>
         </div>
@@ -253,7 +283,10 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       {/* 뷰어 + 부품 목록 (step >= 1) */}
       {step >= 1 && parts && (
         <div className="card">
-          <label>뷰어 — 부품 {parts.part_count}개 (mm · Z-up)</label>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <label style={{ margin: 0 }}>뷰어 — 부품 {parts.part_count}개 (mm · Z-up)</label>
+            {parts.extract_ms != null && <span className="muted" style={{ fontSize: 12 }}>Feature extraction: {(parts.extract_ms / 1000).toFixed(1)}s</span>}
+          </div>
           {glbSrc ? (
             <model-viewer
               src={glbSrc}
@@ -280,22 +313,24 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       {step === 1 && (
         <div className="card">
           <form onSubmit={runClassify}>
-            <label>분류 모드</label>
+            <label>분류 모드<Tip t="재질 추론에 무엇을 단서로 줄지. 모드1=전체 사진+부품 이름으로 LLM이 자동 분류. 모드2=부품별 텍스트 설명을 직접 제공." /></label>
             <select value={mode} onChange={(e) => setMode(e.target.value as "1" | "2")} style={selectStyle}>
               <option value="1">모드 1 — 전체 이미지 + 부품 이름</option>
               <option value="2">모드 2 — 부품별 텍스트 설명</option>
             </select>
             {mode === "1" && (
               <>
-                <label>참조 이미지 (여러 장 가능)</label>
+                <label>참조 이미지 (여러 장 가능)<Tip t="실물/렌더 사진. LLM이 색·질감을 보고 부품별 재질을 분류합니다. 형상엔 영향 없고 재질 추론 입력으로만 쓰입니다." /></label>
                 <input type="file" accept="image/*" multiple onChange={(e) => setImages(Array.from(e.target.files ?? []))} />
               </>
             )}
-            <label>설명 텍스트 {mode === "2" ? "(부품별 설명)" : "(선택)"}</label>
+            <label>설명 텍스트 {mode === "2" ? "(부품별 설명)" : "(선택)"}<Tip t="재질 분류를 돕는 자연어 힌트. 모드2에선 부품별 재질을 직접 적고, 모드1에선 전체 분위기·색감 등 보조 설명." /></label>
             <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="예: 효성 크림색 제어 캐비닛, 도어는 살짝 밝게" />
             <p className="muted">Claude 자격증명(구독 토큰 `CLAUDE_CODE_OAUTH_TOKEN` 또는 API 키)이 있으면 LLM이 부품별 재질을 분류하고, 둘 다 없으면 기본 팔레트로 폴백합니다(어느 경우든 검수 단계에서 직접 수정 가능).</p>
             <div className="row" style={{ marginTop: 12 }}>
               <button type="submit" disabled={busy}>{busy ? "분류 중…" : "재질 분류 (classify)"}</button>
+              {inferMs != null && !busy && <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>Inference time: {(inferMs / 1000).toFixed(1)}s</span>}
+              <JobProgress busy={busy} onCancel={() => acRef.current?.abort()} />
               <button type="button" className="ghost" onClick={() => setStep(0)}>← 이전</button>
             </div>
           </form>
@@ -306,21 +341,29 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
       {step === 2 && (
         <div className="card">
           <div className="row" style={{ justifyContent: "space-between" }}>
-            <label style={{ margin: 0 }}>assignment 검수 (수정 가능)</label>
-            <span className={`badge ${llmUsed ? "ok" : "warn"}`}>{llmUsed ? "LLM 분류" : "기본 팔레트(자격증명 없음)"}</span>
+            <label style={{ margin: 0 }}>부품별 추론 재질<Tip t="LLM이 부품마다 배정한 vMaterials 재질입니다. 비슷한 부품은 같은 재질로 묶입니다. 아래 JSON에서 직접 고치면 이 표·생성 USD에 반영됩니다." /></label>
+            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+              {inferMs != null && <span className="muted" style={{ fontSize: 12 }}>Inference time: {(inferMs / 1000).toFixed(1)}s</span>}
+              <span className={`badge ${llmUsed ? "ok" : "warn"}`}>{llmUsed ? "LLM 분류" : "기본 팔레트(자격증명 없음)"}</span>
+            </div>
           </div>
-          <textarea
-            rows={14}
-            value={assignmentText}
-            onChange={(e) => setAssignmentText(e.target.value)}
-            style={{ fontFamily: "monospace", fontSize: 12.5 }}
-          />
+          <MaterialTable />
+          <details style={{ marginTop: 10 }}>
+            <summary className="muted" style={{ cursor: "pointer", fontSize: 12.5 }}>고급: assignment JSON 직접 수정</summary>
+            <textarea
+              rows={14}
+              value={assignmentText}
+              onChange={(e) => setAssignmentText(e.target.value)}
+              style={{ fontFamily: "monospace", fontSize: 12.5, marginTop: 6 }}
+            />
+          </details>
           <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400, marginTop: 10 }}>
             <input type="checkbox" checked={addLight} onChange={(e) => setAddLight(e.target.checked)} style={{ width: "auto" }} />
-            USD에 기본 라이트(DistantLight) 포함 — Isaac Sim에서 바로 보이게
+            USD에 기본 라이트(DistantLight) 포함 — Isaac Sim에서 바로 보이게<Tip t="결과 USD에 기본 조명을 넣습니다. 켜면 Isaac/Omniverse에서 바로 밝게 보입니다. 이미 조명이 있는 씬에 합칠 거면 꺼서 중복을 피하세요." />
           </label>
           <div className="row" style={{ marginTop: 12 }}>
             <button type="button" onClick={runBuild} disabled={busy}>{busy ? "USD 생성 중…" : "USD 생성 (build)"}</button>
+            <JobProgress busy={busy} onCancel={() => acRef.current?.abort()} />
             <button type="button" className="ghost" onClick={() => setStep(1)}>← 분류 다시</button>
           </div>
         </div>
@@ -343,18 +386,9 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
             </div>
           )}
           <div className="card">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <label style={{ margin: 0 }}>Omniverse 렌더 (360° 회전 · 실제 vMaterials)</label>
-              <button className="ghost" onClick={runIsaac} disabled={isaacBusy}>
-                {isaacBusy ? "렌더 중… (Isaac Sim)" : "Omniverse로 렌더"}
-              </button>
-            </div>
-            <p className="muted">Isaac Sim 6.0 RTX로 결과 USD를 360° 회전 렌더 — PBR 근사가 아닌 실제 MDL 룩. (약 1~2분)</p>
-            {isaacErr && <p className="err">{isaacErr}</p>}
-            {isaacVid && (
-              <video src={isaacVid} controls autoPlay loop muted playsInline style={{ width: "100%", borderRadius: 8, background: "#0d1117" }} />
-            )}
-            {result.asset && <SpinViewer assetId={result.asset.id} label="🖱 인터랙티브 RTX 뷰어 (드래그로 회전)" />}
+            <label style={{ margin: 0 }}>인터랙티브 RTX 뷰어 (실제 vMaterials · 좌우 회전·상하 고도·휠 확대)</label>
+            <p className="muted">Isaac Sim 6.0 RTX로 결과 USD를 렌더(약 수십 초~1~2분) 후 마우스로 돌려봅니다 — PBR 근사가 아닌 실제 MDL 룩.</p>
+            {result.asset && <SpinViewer assetId={result.asset.id} label="🖱 RTX 뷰어 열기 (드래그·휠)" />}
           </div>
           <div className="card">
             <div className="row" style={{ justifyContent: "space-between" }}>
@@ -364,9 +398,10 @@ export default function MaterialUsd({ manifest }: WorkflowModuleProps) {
             <p className="muted">
               메시 {result.info.meshes} · 재질 {Array.isArray(result.info.materials) ? result.info.materials.join(", ") : ""} · 크기(mm) {Array.isArray(result.info.size_mm) ? result.info.size_mm.join(" × ") : ""}
             </p>
-            <p className="muted">{result.asset.filename} · {(result.asset.bytes / 1024).toFixed(1)} KB</p>
-            <div className="row" style={{ marginTop: 8 }}>
-              <button className="ghost" onClick={() => downloadFile(result.asset.download_url, result.asset.filename)}>USD 다운로드</button>
+            <MaterialTable />
+            <p className="muted" style={{ marginTop: 6 }}>{result.asset.filename} · {(result.asset.bytes / 1024).toFixed(1)} KB</p>
+            <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => { const a = result.usdz_asset ?? result.asset; downloadAsset(a.download_url, a.filename); }}>재질 USD 다운로드</button>
               <button className="ghost" onClick={reset}>새로 시작</button>
             </div>
           </div>

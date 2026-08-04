@@ -21,11 +21,12 @@ from ...settings import get_settings
 from .. import jobs, registry, storage
 from .._ca_runner import run_agent_card
 from ..mass_physics import pipeline as mp
+from ..material_usd import pipeline as mu_pipeline
 
 router = APIRouter(tags=["physics-compare"])
 
 _SUPPORTED = {".usd", ".usda", ".usdc", ".usdz"}
-_MAX_FILE = 100 * 1024 * 1024
+_MAX_FILE = 1024 * 1024 * 1024  # 1GB
 
 
 def _usd_units(file_bytes: bytes, ext: str) -> str:
@@ -49,6 +50,19 @@ def _usd_units(file_bytes: bytes, ext: str) -> str:
 def _compare_work(data: bytes, name: str, context: str, images: list[tuple[bytes, str]]) -> dict[str, Any]:
     s = get_settings()
     ext = PurePath(name).suffix.lower()
+    # 공정 비교: 입력을 '맨 지오메트리'로 정리(거대 평면 제거 + 단위 정규화 + baked 재질 제거)
+    # 해 두 엔진에 같은 자산을 준다. NVIDIA 렌더가 평면/깨진 재질로 빈 화면 되는 문제 회피.
+    input_cleaned = False
+    if ext in (".usd", ".usda", ".usdc", ".usdz"):
+        try:
+            data, _ci = mu_pipeline.clean_for_inference(data, name)
+            input_cleaned = True
+            # clean_for_inference 는 항상 바이너리 crate 반환 → 이후 USD 읽기가 원본
+            # 확장자(.usda/.usdz)로 crate 를 열다 실패하지 않게 .usd 로 맞춘다.
+            name = PurePath(name).stem + ".usd"
+            ext = ".usd"
+        except Exception:  # noqa: BLE001
+            input_cleaned = False
     in_units = _usd_units(data, ext)
     stem = PurePath(name).stem
 
@@ -71,9 +85,14 @@ def _compare_work(data: bytes, name: str, context: str, images: list[tuple[bytes
     except Exception:  # noqa: BLE001
         a_preview = None
 
-    # (B) NVIDIA content-physics (WSL)
+    # (B) NVIDIA content-physics (WSL) — 실패해도 ours 결과는 보여준다(에이전트는 비교 기준).
     ctx_b = registry.WorkflowContext("content-physics")
-    res_b = run_agent_card("physics", data, name, ctx_b)
+    content_error = None
+    try:
+        res_b = run_agent_card("physics", data, name, ctx_b)
+    except Exception as exc:  # noqa: BLE001
+        res_b = {}
+        content_error = str(exc)
     b_phys = res_b.get("physics", {})       # {prim: {mass?, density?}}
     b_mats = res_b.get("materials", {})      # {prim: material_name}
 
@@ -99,11 +118,13 @@ def _compare_work(data: bytes, name: str, context: str, images: list[tuple[bytes
         "input": name,
         "in_units": in_units,
         "ndot_total_mass_kg": a_total,
+        "input_cleaned": input_cleaned,
         "rows": rows,
         "ndot_asset": a_asset,            # 자기완결 UsdPhysics USD (Isaac 렌더 가능)
         "ndot_preview": a_preview,
         "nvidia_asset": res_b.get("asset"),
-        "nvidia_status": res_b.get("status"),
+        "nvidia_status": res_b.get("status") or ("실패" if content_error else None),
+        "nvidia_error": content_error,
         "render_ndot": a_asset,
         "render_nvidia": res_b.get("usdz_asset"),
     }
@@ -112,7 +133,7 @@ def _compare_work(data: bytes, name: str, context: str, images: list[tuple[bytes
 async def _read(file: UploadFile) -> tuple[bytes, str]:
     data = await file.read()
     if len(data) > _MAX_FILE:
-        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 100MB).")
+        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 1GB).")
     name = file.filename or "asset.usd"
     if PurePath(name).suffix.lower() not in _SUPPORTED:
         raise HTTPException(status_code=400, detail="USD 형식만 비교 가능합니다(두 엔진 공통 입력). STEP/STL은 '형상 → USD 변환' 카드로 먼저 변환하세요.")

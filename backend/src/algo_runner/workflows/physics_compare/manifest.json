@@ -2,6 +2,7 @@
   "id": "physics-compare",
   "category": "comparison",
   "order": 2,
+  "dev": true,
   "tagline": "두 엔진의 물리(질량·마찰) 추론을 나란히 비교",
   "name": "엔진 비교: 물리 (NdotLight vs NVIDIA)",
   "description": "같은 USD를 두 물리 엔진에 모두 돌려 부품별 물성을 나란히 비교 — (A) NdotLight mass-physics(형상 정확 질량 + 고정 12종 물성표 + 구독 Claude) vs (B) NVIDIA content-physics(멀티뷰 렌더 + VLM이 밀도·질량·마찰 직접 추정, WSL). 수 분 소요.",

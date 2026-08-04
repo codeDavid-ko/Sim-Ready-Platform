@@ -4,7 +4,7 @@
   "order": 2,
   "tagline": "STEP/USD → 부품에 관절(회전·직선·고정) 추가 → USD",
   "name": "관절 추가 (Articulation)",
-  "description": "STEP/USD를 올려 3D로 보면서, 부품을 골라 관절(회전·직선·고정)과 축을 지정해 UsdPhysics 조인트가 들어간 USD로 내보냅니다. 로봇/기구의 가동부를 간단히 정의하는 유틸리티.",
+  "description": "STEP/USD를 올려 3D로 보면서, 부품을 골라 관절(회전·직선·고정)과 축을 지정해 UsdPhysics 조인트가 들어간 USD로 내보냅니다. AI(Claude)가 가동부를 보고 관절을 자동 제안하며, 모터(drive)는 옵션입니다.",
   "icon": "🦾",
   "version": "1.0.0",
   "entry": "articulation",
@@ -12,5 +12,13 @@
   "io": {
     "input": { "file": { "label": "STEP/USD 파일", "accept": ".step,.stp,.usd,.usda,.usdc,.usdz", "required": true } },
     "output": ["usd-download", "viewer-glb"]
-  }
+  },
+  "pipeline": { "accepts": ["usd"], "produces": "usd_physics", "interactive": true,
+    "inputs": { "file": ["usd"], "text": true, "images": true },
+    "params": [
+      { "key": "drive", "label": "모터(drive)", "type": "select", "default": "false",
+        "options": [["false", "없음 — 수동 관절(권장)"], ["true", "모터 추가"]] },
+      { "key": "weld_loose", "label": "연결 안 된 부품", "type": "select", "default": "true",
+        "options": [["true", "본체에 용접(고정)"], ["false", "그대로 둠(자유 강체)"]] }
+    ] }
 }

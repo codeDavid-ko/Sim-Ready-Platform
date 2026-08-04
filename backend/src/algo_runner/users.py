@@ -82,7 +82,8 @@ def list_users() -> list[dict[str, Any]]:
     """비밀번호 해시 제외한 공개 목록."""
     with _LOCK:
         return [
-            {"username": u["username"], "role": u.get("role", "user"), "created": u.get("created", 0)}
+            {"username": u["username"], "role": u.get("role", "user"), "created": u.get("created", 0),
+             "cards": u.get("cards", [])}   # 허용 카드(표시용 권한). admin 은 전체로 취급(프론트).
             for u in _read()
         ]
 
@@ -98,11 +99,12 @@ def get_user(username: str) -> dict[str, Any] | None:
 def verify_credentials(username: str, password: str) -> dict[str, Any] | None:
     u = get_user(username)
     if u and verify_password(password, u.get("pw", "")):
-        return {"username": u["username"], "role": u.get("role", "user")}
+        return {"username": u["username"], "role": u.get("role", "user"), "cards": u.get("cards", [])}
     return None
 
 
-def create_user(username: str, password: str, role: str = "user") -> dict[str, Any]:
+def create_user(username: str, password: str, role: str = "user",
+                cards: list[str] | None = None) -> dict[str, Any]:
     username = (username or "").strip()
     if not username:
         raise ValueError("아이디를 입력하세요.")
@@ -110,14 +112,27 @@ def create_user(username: str, password: str, role: str = "user") -> dict[str, A
         raise ValueError("비밀번호를 입력하세요.")
     if role not in ROLES:
         raise ValueError(f"역할은 {ROLES} 중 하나여야 합니다.")
+    cards = list(cards or [])
     with _LOCK:
         users = _read()
         if any(u["username"] == username for u in users):
             raise ValueError(f"이미 존재하는 아이디: {username}")
-        rec = {"username": username, "role": role, "pw": hash_password(password), "created": int(time.time())}
+        rec = {"username": username, "role": role, "pw": hash_password(password),
+               "created": int(time.time()), "cards": cards}
         users.append(rec)
         _write(users)
-    return {"username": username, "role": role, "created": rec["created"]}
+    return {"username": username, "role": role, "created": rec["created"], "cards": cards}
+
+
+def set_cards(username: str, cards: list[str]) -> None:
+    """허용 카드 목록 갱신(표시용 권한)."""
+    with _LOCK:
+        users = _read()
+        target = next((u for u in users if u["username"] == username), None)
+        if target is None:
+            raise ValueError(f"사용자를 찾을 수 없습니다: {username}")
+        target["cards"] = list(cards or [])
+        _write(users)
 
 
 def set_password(username: str, password: str) -> None:

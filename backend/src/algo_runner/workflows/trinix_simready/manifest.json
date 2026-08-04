@@ -2,6 +2,7 @@
   "id": "trinix-simready",
   "category": "ndotlight-trinix",
   "order": 5,
+  "dev": true,
   "disabled": true,
   "disabledNote": "In development — requires Trinix export (export_scene), currently unavailable on the Trinix server.",
   "tagline": "Trinix 3D → 부품별 재질·물성 USD",

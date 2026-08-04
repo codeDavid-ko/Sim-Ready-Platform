@@ -12,6 +12,11 @@ import MassPhysics from "./mass-physics/MassPhysics";
 import SdTexture from "./sd-texture/SdTexture";
 import TrinixModel from "./trinix-model/TrinixModel";
 import TrinixSimready from "./trinix-simready/TrinixSimready";
+import Turntable from "./turntable/Turntable";
+import Pipelines from "./pipelines/Pipelines";
+import SimReadyDelivery from "./simready-delivery/SimReadyDelivery";
+import LookMerge from "./look-merge/LookMerge";
+import Grasp from "./grasp/Grasp";
 
 // 백엔드 manifest.json 과 같은 모양 (셸은 이것만 알고 내부는 모른다).
 export type WorkflowManifest = {
@@ -25,12 +30,20 @@ export type WorkflowManifest = {
   category?: string;
   order?: number;
   hidden?: boolean;
+  dev?: boolean;
   requiresImageGen?: boolean;
   disabled?: boolean;
   disabledNote?: string;
   requiredPermissions?: string[];
   io?: { input?: Record<string, unknown>; output?: string[] };
 };
+
+// 프론트 전용 "개발중" 오버라이드 — 백엔드 매니페스트를 안 건드리고(재시작 없이) UI에서만
+// 특정 카드를 Labs(개발중)로 취급한다. (예: NVIDIA 물리추론 = content-physics)
+export const DEV_OVERRIDE = new Set<string>(["content-physics"]);
+export function isDevCard(m: { id: string; dev?: boolean }): boolean {
+  return !!m.dev || DEV_OVERRIDE.has(m.id);
+}
 
 // 셸이 마운트된 워크플로우 모듈에 주입하는 props(계약).
 export type WorkflowModuleProps = {
@@ -54,4 +67,9 @@ export const MODULES: Record<string, ComponentType<WorkflowModuleProps>> = {
   "sd-texture": SdTexture,
   "trinix-model": TrinixModel,
   "trinix-simready": TrinixSimready,
+  "turntable": Turntable,
+  "pipelines": Pipelines,
+  "nvidia-simready-delivery": SimReadyDelivery,
+  "look-merge": LookMerge,
+  "grasp": Grasp,
 };

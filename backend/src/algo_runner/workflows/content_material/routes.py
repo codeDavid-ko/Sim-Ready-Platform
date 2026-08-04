@@ -18,7 +18,7 @@ from . import handler
 
 router = APIRouter(tags=["content-material"])
 
-_MAX_FILE = 100 * 1024 * 1024
+_MAX_FILE = 1024 * 1024 * 1024  # 1GB
 
 
 @router.post("/submit")
@@ -27,7 +27,7 @@ async def submit(
 ) -> dict[str, Any]:
     data = await file.read()
     if len(data) > _MAX_FILE:
-        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 100MB).")
+        raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 1GB).")
     name = file.filename or "asset.usd"
     ctx = registry.WorkflowContext(workflow_id="content-material")
     job_id = jobs.submit(lambda: handler.run({}, data, name, ctx))

@@ -66,6 +66,7 @@ class LoginOut(BaseModel):
     token: str
     username: str
     role: str
+    cards: list[str] = []   # 허용 카드(표시용 권한). admin 은 프론트에서 전체로 취급.
 
 
 class StatusOut(BaseModel):
@@ -78,6 +79,7 @@ class StatusOut(BaseModel):
 class MeOut(BaseModel):
     username: str
     role: str
+    cards: list[str] = []
 
 
 @router.get("/status", response_model=StatusOut)
@@ -104,11 +106,11 @@ def login(body: LoginIn, s: Settings = Depends(get_settings)) -> LoginOut:
     if who is None:
         raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
     token = issue_token(s.resolve_auth_secret(), who["username"], who["role"])
-    return LoginOut(token=token, username=who["username"], role=who["role"])
+    return LoginOut(token=token, username=who["username"], role=who["role"], cards=who.get("cards", []))
 
 
 def _current(request: Request, s: Settings) -> dict:
-    """Bearer 토큰 검증 + 사용자 존재 확인 → {username, role(live)}."""
+    """Bearer 토큰 검증 + 사용자 존재 확인 → {username, role(live), cards(live)}."""
     header = request.headers.get("authorization", "")
     parts = header.split(None, 1)
     token = parts[1].strip() if len(parts) == 2 and parts[0].lower() == "bearer" else ""
@@ -118,7 +120,9 @@ def _current(request: Request, s: Settings) -> dict:
     u = users.get_user(payload.get("sub", ""))
     if u is None:
         raise HTTPException(status_code=401, detail="존재하지 않는 사용자입니다.")
-    return {"username": u["username"], "role": u.get("role", "user")}
+    from . import presence
+    presence.touch(u["username"])  # 접속 추적(인증 요청마다 last-seen 갱신)
+    return {"username": u["username"], "role": u.get("role", "user"), "cards": u.get("cards", [])}
 
 
 def require_auth(request: Request, s: Settings = Depends(get_settings)) -> dict:
@@ -134,6 +138,14 @@ def require_admin(request: Request, s: Settings = Depends(get_settings)) -> dict
     return who
 
 
+@router.get("/active-users")
+def active_users(_who: dict = Depends(require_auth)) -> dict:
+    """최근 5분 내 활동한(=접속 중인) 사용자 수."""
+    from . import presence
+    a = presence.active(300.0)
+    return {"count": len(a), "users": a, "window_min": 5}
+
+
 @router.get("/me", response_model=MeOut)
 def me(who: dict = Depends(require_auth)) -> MeOut:
-    return MeOut(username=who["username"], role=who["role"])
+    return MeOut(username=who["username"], role=who["role"], cards=who.get("cards", []))

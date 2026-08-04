@@ -25,7 +25,7 @@ from ..trinix_model import pipeline as trinix
 
 router = APIRouter(tags=["trinix-simready"])
 _WF_ID = "trinix-simready"
-_MAX_FILE = 30 * 1024 * 1024
+_MAX_FILE = 1024 * 1024 * 1024  # 1GB
 _NAME = "model.step"
 
 
@@ -48,7 +48,7 @@ async def submit(
     for im in images:
         b = await im.read()
         if len(b) > _MAX_FILE:
-            raise HTTPException(status_code=413, detail="이미지가 너무 큽니다(최대 30MB).")
+            raise HTTPException(status_code=413, detail="이미지가 너무 큽니다(최대 1GB).")
         if b:
             imgs.append((b, im.content_type or "image/jpeg"))
     prompt = text.strip()
@@ -92,12 +92,14 @@ async def submit(
             phys_parts = [{"error": str(exc)}]
 
         # 부품별 재질+물성 병합 테이블
-        a_parts = asg.get("parts", {})
+        a_parts = asg.get("parts", {})  # 부품 인덱스 키("0","1",...) — 이름 중복 대비
         a_palette = asg.get("palette", {})
+        a_default = a_parts.get("__default__")
         phys_by_name = {p.get("name"): p for p in phys_parts if "name" in p}
         rows = []
-        for part in [p["name"] for p in parts_json.get("parts", [])]:
-            key = a_parts.get(part) or a_parts.get("__default__")
+        for i, p in enumerate(parts_json.get("parts", [])):
+            part = p["name"]
+            key = a_parts.get(str(i)) or a_default
             spec = a_palette.get(key, {})
             ph = phys_by_name.get(part, {})
             rows.append({

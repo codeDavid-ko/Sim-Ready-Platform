@@ -60,49 +60,81 @@ def main() -> int:
     ap.add_argument("--size", type=int, default=768)
     ap.add_argument("--steps", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--init-image", default="", help="참조 이미지 경로(있으면 img2img). 없으면 text2img.")
+    ap.add_argument("--strength", type=float, default=0.55,
+                    help="img2img 변형 강도 0~1 (낮을수록 원본 유지, 높을수록 프롬프트 반영).")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     status = os.path.join(args.out, "status.txt")
     if args.prompt_file and os.path.exists(args.prompt_file):
         with open(args.prompt_file, encoding="utf-8") as f:
             args.prompt = f.read().strip()
-    if not args.prompt:
+    has_img = bool(args.init_image) and os.path.exists(args.init_image)
+    if not args.prompt and not has_img:
         with open(status, "w") as f:
-            f.write("FAILED: empty prompt")
+            f.write("FAILED: empty prompt and no init image")
         return 1
 
     try:
         import torch
-        from diffusers import AutoPipelineForText2Image
+        from PIL import Image
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if device == "cuda" else torch.float32
-        pipe = AutoPipelineForText2Image.from_pretrained(MODEL, torch_dtype=dtype)
-        pipe = pipe.to(device)
-        try:
-            _seamless(pipe)
-        except Exception:  # noqa: BLE001 -- 타일러블은 best-effort
-            pass
 
+        base = args.prompt.strip()
         prompt = (
-            f"{args.prompt}, seamless tileable PBR material texture, top-down flat, "
+            (f"{base}, " if base else "")
+            + "seamless tileable PBR material texture, top-down flat, "
             "even lighting, high detail, no shadows, no perspective"
         )
         gen = torch.Generator(device=device).manual_seed(int(args.seed))
-        # SD-Turbo: guidance_scale=0.0, 1~4 step
-        image = pipe(
-            prompt=prompt,
-            num_inference_steps=max(1, args.steps),
-            guidance_scale=0.0,
-            height=args.size,
-            width=args.size,
-            generator=gen,
-        ).images[0]
+        mode = "img2img" if has_img else "text2img"
+
+        if has_img:
+            # 참조 이미지 → img2img (같은 SD-Turbo). 정사각 size 로 맞춰 타일 텍스처로 변형.
+            from diffusers import AutoPipelineForImage2Image
+
+            init = Image.open(args.init_image).convert("RGB").resize((args.size, args.size))
+            pipe = AutoPipelineForImage2Image.from_pretrained(MODEL, torch_dtype=dtype).to(device)
+            try:
+                _seamless(pipe)
+            except Exception:  # noqa: BLE001 -- 타일러블은 best-effort
+                pass
+            strength = min(0.99, max(0.1, float(args.strength)))
+            # SD-Turbo img2img: 유효 스텝 = ceil(steps*strength) ≥ 1 보장
+            steps = max(2, int(args.steps), int(-(-1 // strength)))
+            image = pipe(
+                prompt=prompt,
+                image=init,
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=0.0,
+                generator=gen,
+            ).images[0]
+        else:
+            from diffusers import AutoPipelineForText2Image
+
+            pipe = AutoPipelineForText2Image.from_pretrained(MODEL, torch_dtype=dtype).to(device)
+            try:
+                _seamless(pipe)
+            except Exception:  # noqa: BLE001
+                pass
+            # SD-Turbo: guidance_scale=0.0, 1~4 step
+            image = pipe(
+                prompt=prompt,
+                num_inference_steps=max(1, args.steps),
+                guidance_scale=0.0,
+                height=args.size,
+                width=args.size,
+                generator=gen,
+            ).images[0]
 
         image.save(os.path.join(args.out, "albedo.png"))
         _derive_maps(image, args.out)
         json.dump(
-            {"model": MODEL, "prompt": prompt, "size": args.size, "device": device},
+            {"model": MODEL, "mode": mode, "prompt": prompt,
+             "strength": (args.strength if has_img else None), "size": args.size, "device": device},
             open(os.path.join(args.out, "meta.json"), "w"),
             ensure_ascii=False,
         )

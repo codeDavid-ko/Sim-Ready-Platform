@@ -16,10 +16,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .. import jobs
+
 _DISTRO = "Ubuntu-24.04"
 _RUNS = Path(__file__).resolve().parents[4] / "_ca_runs"  # backend/_ca_runs
 _SUPPORTED = {".usd", ".usda", ".usdc", ".usdz"}
-_TIMEOUT = 900  # seconds (full pipeline incl. per-prim VLM calls)
+_TIMEOUT = 2400  # seconds — 렌더(~12분) + 클러스터 단위 VLM 추론 여유(다부품 자산)
 
 
 def _to_wsl(p: Path) -> str:
@@ -45,8 +47,27 @@ def run(
     run_id = uuid.uuid4().hex[:12]
     rundir = _RUNS / run_id
     rundir.mkdir(parents=True, exist_ok=True)
-    in_path = rundir / f"input{ext}"
-    in_path.write_bytes(file_bytes)
+    # run_one.sh 가 입력을 '_card_input.usd'(고정 .usd 이름)로 복사해 연다. usdz(zip)는 .usd 로
+    # 이름만 바뀌면 못 열림 → geometry 를 텍스트 .usda 로 평탄화해 넘긴다(버전 무관·복사돼도 열림).
+    if ext == ".usdz":
+        from pxr import Usd, UsdGeom
+        tmp = rundir / "input.usdz"; tmp.write_bytes(file_bytes)
+        in_path = rundir / "input.usda"
+        try:
+            stage = Usd.Stage.Open(str(tmp))
+            if stage is None:
+                raise RuntimeError("usdz 열기 실패")
+            dp = stage.GetDefaultPrim()
+            if not (dp and dp.IsValid()):   # defaultPrim 없으면 첫 최상위 prim 으로(렌더 프레이밍용)
+                for p in stage.GetPseudoRoot().GetChildren():
+                    if p.IsA(UsdGeom.Imageable):
+                        stage.SetDefaultPrim(p); break
+            stage.Flatten().Export(str(in_path))
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"usdz 입력을 .usda 로 변환하지 못했습니다: {exc}") from None
+    else:
+        in_path = rundir / f"input{ext}"
+        in_path.write_bytes(file_bytes)
 
     wsl_in = _to_wsl(in_path)
     wsl_out = _to_wsl(rundir)
@@ -55,7 +76,7 @@ def run(
         f"bash ~/content-agents/run_one.sh '{wsl_in}' '{wsl_out}'",
     ]
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT)
+        jobs.run(cmd, timeout=_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"파이프라인 시간 초과({_TIMEOUT}s).") from None
     except FileNotFoundError:
@@ -75,9 +96,22 @@ def run(
     log_tail = ""
     lf = rundir / "run.log"
     if lf.exists():
-        log_tail = "\n".join(
-            lf.read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
-        )
+        lines = lf.read_text(encoding="utf-8", errors="replace").splitlines()
+        # 텔레메트리/배너 꼬리보다 '진짜 실패 사유'를 우선 추출한다.
+        kw = ("failed at task", "blank or near-blank", "Pipeline failed", "Error running pipeline",
+              "RuntimeError", "CUDA", "out of memory", "Traceback")
+        hits = [ln.strip() for ln in lines if any(k.lower() in ln.lower() for k in kw)]
+        # 중복/노이즈 제거 후 의미 있는 사유 몇 줄 + 마지막 5줄
+        seen_l: set[str] = set()
+        meaningful = []
+        for ln in hits:
+            base = ln[ln.find("]") + 1:] if "]" in ln[:40] else ln
+            base = base.strip("│ ").strip()
+            if base and base not in seen_l:
+                seen_l.add(base)
+                meaningful.append(base)
+        parts = meaningful[:6] + (["…"] if meaningful else []) + [ln for ln in lines[-5:]]
+        log_tail = "\n".join(parts)
 
     out_usd = rundir / "output.usd"
     asset = None

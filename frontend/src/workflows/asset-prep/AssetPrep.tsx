@@ -4,6 +4,7 @@ import { useState } from "react";
 import { API_BASE, downloadFile } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
 import type { WorkflowModuleProps } from "../registry";
+import Tip from "../Tip";
 
 type Check = { key: string; ok: boolean; detail: string };
 type Asset = { id: string; name: string; filename: string; bytes: number; download_url: string };
@@ -73,7 +74,7 @@ export default function AssetPrep({ manifest }: WorkflowModuleProps) {
       <div className="card">
         <p className="muted">{manifest.description}</p>
         <form onSubmit={run}>
-          <label>3D 에셋 파일 ({accept})</label>
+          <label>3D 에셋 파일 ({accept})<Tip t="검증·변환할 3D 에셋을 업로드합니다. sim-ready 기준(단위·축·구조 등) 점검 후 USD로 정리합니다." /></label>
           <input type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           {error && <p className="err">{error}</p>}
           <div style={{ marginTop: 12 }}>

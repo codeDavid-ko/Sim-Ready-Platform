@@ -22,6 +22,7 @@ class UserIn(BaseModel):
     username: str
     password: str
     role: str = "user"
+    cards: list[str] = []   # 허용 카드(표시용 권한)
 
 
 class PasswordIn(BaseModel):
@@ -32,6 +33,10 @@ class RoleIn(BaseModel):
     role: str
 
 
+class CardsIn(BaseModel):
+    cards: list[str] = []
+
+
 @router.get("/users")
 def list_users(who: dict = Depends(require_admin)) -> dict[str, Any]:
     return {"users": users.list_users(), "me": who["username"]}
@@ -40,10 +45,19 @@ def list_users(who: dict = Depends(require_admin)) -> dict[str, Any]:
 @router.post("/users")
 def create_user(body: UserIn, _who: dict = Depends(require_admin)) -> dict[str, Any]:
     try:
-        rec = users.create_user(body.username, body.password, body.role)
+        rec = users.create_user(body.username, body.password, body.role, body.cards)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     return {"ok": True, "user": rec}
+
+
+@router.post("/users/{username}/cards")
+def change_cards(username: str, body: CardsIn, _who: dict = Depends(require_admin)) -> dict[str, Any]:
+    try:
+        users.set_cards(username, body.cards)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"ok": True}
 
 
 @router.post("/users/{username}/password")

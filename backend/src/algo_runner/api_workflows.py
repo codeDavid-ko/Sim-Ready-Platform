@@ -16,12 +16,12 @@ from fastapi.responses import FileResponse
 
 from .auth import require_auth
 from .settings import get_settings
-from .workflows import jobs, registry, storage
+from .workflows import jobs, registry, storage, usdz_util
 from .workflows.material_usd import isaac
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
-_MAX_FILE = 100 * 1024 * 1024  # 100MB (3D 에셋 고려)
+_MAX_FILE = 1024 * 1024 * 1024  # 1GB
 
 
 @router.get("")
@@ -38,10 +38,27 @@ def list_workflows(_gate: None = Depends(require_auth)) -> dict[str, Any]:
     return {"workflows": out}
 
 
+@router.get("/assets/recent")
+def recent_assets(limit: int = 10, _gate: None = Depends(require_auth)) -> dict[str, Any]:
+    """최근 등록된 산출물(에셋) — 대시보드 '최근 실행' 표시용(읽기 전용)."""
+    items = storage.list_assets()[-max(1, min(limit, 50)):][::-1]
+    return {"assets": [
+        {"id": a["id"], "workflow_id": a.get("workflow_id"), "name": a.get("name"),
+         "filename": a.get("filename"), "bytes": a.get("bytes"), "download_url": a.get("download_url")}
+        for a in items
+    ]}
+
+
 @router.get("/jobs/{job_id}")
 def job_status(job_id: str, _gate: None = Depends(require_auth)) -> dict[str, Any]:
     """긴 워크플로우의 백그라운드 잡 상태/결과 (폴링용)."""
     return jobs.get(job_id)
+
+
+@router.post("/jobs/{job_id}/cancel")
+def job_cancel(job_id: str, _gate: None = Depends(require_auth)) -> dict[str, Any]:
+    """실행 중인 잡 취소 — cancel 플래그 + 자식 프로세스(Isaac/WSL) 트리 종료."""
+    return {"ok": jobs.cancel(job_id)}
 
 
 @router.post("/spin-submit")
@@ -49,11 +66,12 @@ async def spin_submit(
     asset_id: str = Form(...),
     frames: int = Form(36),
     res: int = Form(540),
+    elevations: int = Form(1),
     _gate: None = Depends(require_auth),
 ) -> dict[str, Any]:
-    """등록된 USD/USDZ 에셋을 Isaac RTX 로 360° 프레임 렌더(잡) → 브라우저 스핀 뷰어용.
-    GET /api/workflows/jobs/{job_id} 폴링 → {frames:[download_url...], count}.
-    모든 카드 공용(asset_id 만 주면 됨)."""
+    """등록된 USD/USDZ 에셋을 Isaac RTX 로 스핀 프레임 렌더(잡) → 브라우저 스핀 뷰어용.
+    GET /api/workflows/jobs/{job_id} 폴링 → {frames:[download_url...], count, rows, cols}.
+    elevations>1 이면 고도×방위각 격자(상하 드래그 지원). 모든 카드 공용(asset_id 만)."""
     p = storage.asset_path(asset_id)
     if p is None:
         raise HTTPException(status_code=404, detail="에셋을 찾을 수 없습니다.")
@@ -62,14 +80,15 @@ async def spin_submit(
     usd_path = str(p)
     nframes = max(8, min(int(frames), 72))
     r = max(256, min(int(res), 900))
+    ne = max(1, min(int(elevations), 5))
 
     def _job() -> dict[str, Any]:
-        imgs = isaac.render_spin_frames(usd_path, frames=nframes, res=r)
+        imgs, rows, cols = isaac.render_spin_frames(usd_path, frames=nframes, res=r, elevations=ne)
         recs = [
             storage.register_asset("spin", f"frame_{i}", f"spin_{i}.png", data, {"stage": "spin"})
             for i, data in enumerate(imgs)
         ]
-        return {"frames": [rec["download_url"] for rec in recs], "count": len(recs)}
+        return {"frames": [rec["download_url"] for rec in recs], "count": len(recs), "rows": rows, "cols": cols}
 
     return {"job_id": jobs.submit(_job)}
 
@@ -100,7 +119,7 @@ async def run_workflow(
     if file is not None:
         file_bytes = await file.read()
         if len(file_bytes) > _MAX_FILE:
-            raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 100MB).")
+            raise HTTPException(status_code=413, detail="파일이 너무 큽니다(최대 1GB).")
         file_name = file.filename
 
     ctx = registry.WorkflowContext(workflow_id=workflow_id)
@@ -119,3 +138,16 @@ def download_asset(
     if p is None:
         raise HTTPException(status_code=404, detail="에셋을 찾을 수 없습니다.")
     return FileResponse(path=str(p), filename=p.name, media_type="application/octet-stream")
+
+
+@router.get("/{workflow_id}/assets/{asset_id}/portable")
+def download_asset_portable(
+    workflow_id: str, asset_id: str, _gate: None = Depends(require_auth)
+) -> FileResponse:
+    """자기완결 다운로드 — USD 가 외부 자산(MDL/텍스처/레퍼런스)을 절대경로로 참조하면
+    의존자산까지 묶은 .usdz 로 패키징해 내려준다(다른 PC 에서도 형상+재질 그대로). 모든 카드 공용."""
+    p = storage.asset_path(asset_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="에셋을 찾을 수 없습니다.")
+    out = usdz_util.portable_path(p)
+    return FileResponse(path=str(out), filename=out.name, media_type="application/octet-stream")

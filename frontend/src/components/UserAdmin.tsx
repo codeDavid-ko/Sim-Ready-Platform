@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { API_BASE } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
 
-type User = { username: string; role: string; created: number };
+type User = { username: string; role: string; created: number; cards?: string[] };
+type CardOpt = { id: string; name: string };
 
 async function adminJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -28,9 +29,15 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
   const [nu, setNu] = useState("");
   const [np, setNp] = useState("");
   const [nr, setNr] = useState("user");
+  const [nc, setNc] = useState<string[]>([]);            // 새 사용자 허용 카드
   // 비번 변경
   const [pwFor, setPwFor] = useState<string | null>(null);
   const [pwVal, setPwVal] = useState("");
+  // 카드 권한
+  const [availCards, setAvailCards] = useState<CardOpt[]>([]);
+  const [cardsFor, setCardsFor] = useState<string | null>(null);
+  const [cardsEdit, setCardsEdit] = useState<string[]>([]);
+  const toggle = (arr: string[], id: string) => arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id];
   // 외부 공개 터널
   const [tunnel, setTunnel] = useState<{ running: boolean; url: string | null; error: string | null; installed: boolean } | null>(null);
   const [tunnelBusy, setTunnelBusy] = useState(false);
@@ -41,6 +48,8 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
       const r = await adminJson<{ users: User[]; me: string }>("/api/admin/users");
       setUsers(r.users);
       setMe(r.me);
+      const wf = await adminJson<{ workflows: { id: string; name: string; hidden?: boolean }[] }>("/api/workflows");
+      setAvailCards(wf.workflows.filter((w) => !w.hidden).map((w) => ({ id: w.id, name: w.name })));
     } catch (e) { setError(String((e as Error).message)); }
   }
   type Tun = { running: boolean; url: string | null; error: string | null; installed: boolean };
@@ -77,8 +86,8 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
     e.preventDefault();
     setError(null);
     try {
-      await adminJson("/api/admin/users", { method: "POST", body: JSON.stringify({ username: nu, password: np, role: nr }) });
-      setNu(""); setNp(""); setNr("user");
+      await adminJson("/api/admin/users", { method: "POST", body: JSON.stringify({ username: nu, password: np, role: nr, cards: nr === "user" ? nc : [] }) });
+      setNu(""); setNp(""); setNr("user"); setNc([]);
       flash("사용자를 추가했습니다.");
       load();
     } catch (e) { setError(String((e as Error).message)); }
@@ -98,6 +107,15 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
       await adminJson(`/api/admin/users/${encodeURIComponent(username)}/role`, { method: "POST", body: JSON.stringify({ role }) });
       flash(`${username} 역할을 ${role}로 변경했습니다.`);
       load();
+    } catch (e) { setError(String((e as Error).message)); }
+  }
+  async function saveCards() {
+    if (!cardsFor) return;
+    setError(null);
+    try {
+      await adminJson(`/api/admin/users/${encodeURIComponent(cardsFor)}/cards`, { method: "POST", body: JSON.stringify({ cards: cardsEdit }) });
+      flash(`${cardsFor} 카드 권한을 저장했습니다.`);
+      setCardsFor(null); setCardsEdit([]); load();
     } catch (e) { setError(String((e as Error).message)); }
   }
   async function del(username: string) {
@@ -168,6 +186,18 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
             </div>
             <button type="submit">추가</button>
           </div>
+          {nr === "user" && (
+            <div style={{ marginTop: 10 }}>
+              <label style={{ fontSize: 13 }}>허용 카드 (체크한 카드만 사용 가능 · admin은 항상 전체)</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                {availCards.map((c) => (
+                  <label key={c.id} style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid var(--vsc-border)", borderRadius: 8, padding: "2px 8px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={nc.includes(c.id)} onChange={() => setNc((a) => toggle(a, c.id))} /> {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </form>
       </div>
 
@@ -203,6 +233,7 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
                   ) : (
                     <span className="row" style={{ gap: 6 }}>
                       <button className="ghost" onClick={() => { setPwFor(u.username); setPwVal(""); }}>비밀번호 변경</button>
+                      <button className="ghost" onClick={() => { setCardsFor(u.username); setCardsEdit(u.cards ?? []); }} disabled={u.role === "admin"} title={u.role === "admin" ? "admin은 전체 사용" : ""}>카드 권한{u.role === "admin" ? "(전체)" : ` (${(u.cards ?? []).length})`}</button>
                       {u.username !== me && <button className="ghost" onClick={() => del(u.username)}>삭제</button>}
                     </span>
                   )}
@@ -211,7 +242,29 @@ export function UserAdmin({ onBack }: { onBack: () => void }) {
             ))}
           </tbody>
         </table>
-        <p className="muted" style={{ marginTop: 8 }}>역할 드롭다운으로 admin/user 전환. 마지막 관리자는 강등·삭제 불가. 자기 자신은 삭제 불가.</p>
+        <p className="muted" style={{ marginTop: 8 }}>역할 드롭다운으로 admin/user 전환. 마지막 관리자는 강등·삭제 불가. 자기 자신은 삭제 불가. <b>카드 권한</b>은 user 계정에만(admin은 전체). 프론트 표시용 — 없는 카드는 🔒로 표시되고 열 때 차단됩니다.</p>
+        {cardsFor && (
+          <div style={{ marginTop: 10, padding: "10px 12px", border: "1px solid var(--vsc-focus)", borderRadius: 8 }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <b>{cardsFor} — 카드 권한</b>
+              <span className="row" style={{ gap: 6 }}>
+                <button className="ghost" onClick={() => setCardsEdit(availCards.map((c) => c.id))}>전체</button>
+                <button className="ghost" onClick={() => setCardsEdit([])}>해제</button>
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+              {availCards.map((c) => (
+                <label key={c.id} style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid var(--vsc-border)", borderRadius: 8, padding: "2px 8px", cursor: "pointer" }}>
+                  <input type="checkbox" checked={cardsEdit.includes(c.id)} onChange={() => setCardsEdit((a) => toggle(a, c.id))} /> {c.name}
+                </label>
+              ))}
+            </div>
+            <div className="row" style={{ gap: 8, marginTop: 10 }}>
+              <button onClick={saveCards}>저장</button>
+              <button className="ghost" onClick={() => { setCardsFor(null); setCardsEdit([]); }}>취소</button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

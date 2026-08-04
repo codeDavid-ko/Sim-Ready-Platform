@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiJson, blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
+import { apiJson, blobUrl, CancelledError, downloadAsset, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
 import SpinViewer from "../SpinViewer";
+import JobProgress from "../JobProgress";
+import Tip from "../Tip";
 
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 type Row = {
@@ -36,6 +38,7 @@ export default function TrinixSimready({ manifest }: WorkflowModuleProps) {
   const [ready, setReady] = useState<boolean | null>(null);
   const [glbSrc, setGlbSrc] = useState<string | null>(null);
   const refs = useRef<string[]>([]);
+  const acRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     import("@google/model-viewer").catch(() => {});
@@ -50,19 +53,22 @@ export default function TrinixSimready({ manifest }: WorkflowModuleProps) {
     setGlbSrc(null);
     if (!text.trim() && images.length === 0) { setError("텍스트 설명 또는 참조 이미지를 입력하세요."); return; }
     setBusy(true);
+    const ac = new AbortController();
+    acRef.current = ac;
     try {
       const fd = new FormData();
       fd.append("text", text.trim());
       for (const img of images) fd.append("images", img);
-      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/submit`, fd);
+      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/submit`, fd, { signal: ac.signal });
       setResult(r);
       if (r.material_preview?.download_url) {
         try { const u = await blobUrl(r.material_preview.download_url); refs.current.push(u); setGlbSrc(u); } catch { /* */ }
       }
     } catch (err) {
-      setError(String((err as Error).message));
+      setError(err instanceof CancelledError ? "취소되었습니다." : String((err as Error).message));
     } finally {
       setBusy(false);
+      acRef.current = null;
     }
   }
 
@@ -76,15 +82,16 @@ export default function TrinixSimready({ manifest }: WorkflowModuleProps) {
           <p className="err">Trinix 가 준비되지 않았습니다 — .env 의 TRINIX_AI_TOKEN 과 라이브 페어링 세션이 필요합니다.</p>
         )}
         <form onSubmit={run}>
-          <label>설명/요구/치수 (텍스트)</label>
+          <label>설명/요구/치수 (텍스트)<Tip t="만들 모델을 글로 설명. 치수(mm)·재질·형상을 구체적으로 적을수록 Trinix 모델링과 이후 재질·물성 추론이 정확해집니다." /></label>
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4}
             placeholder="예: 알루미늄 프레임에 고무 발 4개가 달린 받침대 / 또는 도면 설명" />
-          <label>참조 이미지 (선택 · 도면/사진, 복수)</label>
+          <label>참조 이미지 (선택 · 도면/사진, 복수)<Tip t="모델링에 참고할 도면·사진(여러 장 가능). 텍스트와 함께 쓰면 형상·재질 인식 정확도가 올라갑니다." /></label>
           <input type="file" accept="image/*" multiple onChange={(e) => setImages(Array.from(e.target.files ?? []))} />
           <p className="muted">Trinix 3D(STEP) → 부품별 재질(vMaterials) → 질량·물성까지 한 번에 — <b>수 분</b> 소요. {images.length > 0 ? `이미지 ${images.length}장 첨부됨.` : ""}</p>
           <div style={{ marginTop: 12 }}>
-            <button type="submit" disabled={busy || ready === false}>{busy ? "파이프라인 실행 중… (수 분)" : "모델링 → 재질·물성 실행"}</button>
+            <button type="submit" disabled={busy || ready === false}>{busy ? "파이프라인 실행 중…" : "모델링 → 재질·물성 실행"}</button>
           </div>
+          <JobProgress busy={busy} onCancel={() => acRef.current?.abort()} etaSec={900} hint="Trinix→재질→물성" />
         </form>
       </div>
 
@@ -133,9 +140,9 @@ export default function TrinixSimready({ manifest }: WorkflowModuleProps) {
           <div className="card">
             <label>결과 다운로드</label>
             <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-              {result.step_asset && <button className="ghost" onClick={() => downloadFile(result.step_asset!.download_url, result.step_asset!.filename)}>STEP (형상)</button>}
-              {result.material_asset && <button className="ghost" onClick={() => downloadFile(result.material_asset!.download_url, result.material_asset!.filename)}>재질 USD</button>}
-              {result.physics_asset && <button className="ghost" onClick={() => downloadFile(result.physics_asset!.download_url, result.physics_asset!.filename)}>물성 USD (UsdPhysics)</button>}
+              {result.step_asset && <button className="ghost" onClick={() => downloadAsset(result.step_asset!.download_url, result.step_asset!.filename)}>STEP (형상)</button>}
+              {result.material_asset && <button className="ghost" onClick={() => downloadAsset(result.material_asset!.download_url, result.material_asset!.filename)}>재질 USD</button>}
+              {result.physics_asset && <button className="ghost" onClick={() => downloadAsset(result.physics_asset!.download_url, result.physics_asset!.filename)}>물성 USD (UsdPhysics)</button>}
             </div>
             <p className="muted" style={{ marginTop: 6 }}>재질 USD(부품별 vMaterials 바인딩)와 물성 USD(질량·마찰·반발)는 각각 받습니다. 정밀 RTX 룩은 재질 USD를 “재질 추론 USD” 카드/Omniverse로 렌더하세요.</p>
           </div>

@@ -40,19 +40,40 @@ def sd_available() -> bool:
         return False
 
 
-def generate(prompt: str, size: int = 768, steps: int = 4, seed: int = 0) -> Path:
-    """SD 워커 실행 → albedo/normal/roughness 가 든 run 디렉터리 반환."""
+def generate(
+    prompt: str,
+    size: int = 768,
+    steps: int = 4,
+    seed: int = 0,
+    init_image: bytes | None = None,
+    init_image_name: str | None = None,
+    strength: float = 0.55,
+) -> Path:
+    """SD 워커 실행 → albedo/normal/roughness 가 든 run 디렉터리 반환.
+
+    init_image 를 주면 img2img(참조 이미지 변형), 없으면 text2img.
+    """
     rid = uuid.uuid4().hex[:12]
     rundir = _RUNS / rid
     rundir.mkdir(parents=True, exist_ok=True)
-    (rundir / "prompt.txt").write_text(prompt, encoding="utf-8")
+    (rundir / "prompt.txt").write_text(prompt or "", encoding="utf-8")
+    extra = ""
+    if init_image:
+        ext = (Path(init_image_name).suffix.lower() if init_image_name else "") or ".png"
+        if ext not in (".png", ".jpg", ".jpeg", ".webp", ".bmp"):
+            ext = ".png"
+        img_path = rundir / f"init{ext}"
+        img_path.write_bytes(init_image)
+        extra = f" --init-image {_to_wsl(img_path)} --strength {float(strength)}"
     cmd = [
         "wsl.exe", "-d", _DISTRO, "bash", "-lc",
         f"{_SD_PY} {_to_wsl(_WORKER)} --prompt-file {_to_wsl(rundir / 'prompt.txt')} "
-        f"--out {_to_wsl(rundir)} --size {int(size)} --steps {int(steps)} --seed {int(seed)}",
+        f"--out {_to_wsl(rundir)} --size {int(size)} --steps {int(steps)} --seed {int(seed)}{extra}",
     ]
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT)
+        # WSL 워커 출력은 UTF-8 → Windows 기본 로캘(cp949)로 디코드하면 리더스레드가
+        # UnicodeDecodeError 를 던진다(결과 파일은 따로 확인하므로 치명적이진 않지만 로그가 더러워짐).
+        subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"텍스처 생성 시간 초과({_TIMEOUT}s).") from None
     if not (rundir / "albedo.png").exists():

@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { blobUrl, downloadFile, submitAndPoll } from "@/lib/api";
+import { blobUrl, CancelledError, downloadAsset, submitAndPoll } from "@/lib/api";
 import type { WorkflowModuleProps } from "../registry";
 import SpinViewer from "../SpinViewer";
+import JobProgress from "../JobProgress";
+import Tip from "../Tip";
 
 type AssetRec = { id: string; filename: string; bytes: number; download_url: string };
 type Side = { material?: string; density?: number; mass_kg?: number; static_friction?: number; restitution?: number };
@@ -34,6 +36,7 @@ export default function PhysicsCompare({ manifest }: WorkflowModuleProps) {
   const [result, setResult] = useState<Result | null>(null);
   const [glb, setGlb] = useState<string | null>(null);
   const refs = useRef<string[]>([]);
+  const acRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     import("@google/model-viewer").catch(() => {});
@@ -47,20 +50,24 @@ export default function PhysicsCompare({ manifest }: WorkflowModuleProps) {
     setGlb(null);
     if (!file) { setError("USD 파일을 선택하세요."); return; }
     setBusy(true);
+    const ac = new AbortController();
+    acRef.current = ac;
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("context", context);
       for (const img of images) fd.append("images", img);
-      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/compare-submit`, fd);
+      const r = await submitAndPoll<Result>(`/api/workflows/${WF}/compare-submit`, fd, { signal: ac.signal });
       setResult(r);
       if (r.ndot_preview?.download_url) {
         try { const u = await blobUrl(r.ndot_preview.download_url); refs.current.push(u); setGlb(u); } catch { /* */ }
       }
     } catch (err) {
-      setError(String((err as Error).message));
+      if (err instanceof CancelledError) setError("취소되었습니다.");
+      else setError(String((err as Error).message));
     } finally {
       setBusy(false);
+      acRef.current = null;
     }
   }
 
@@ -73,14 +80,15 @@ export default function PhysicsCompare({ manifest }: WorkflowModuleProps) {
         <form onSubmit={run}>
           <label>USD 파일 ({accept})</label>
           <input type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          <label>맥락 힌트 (선택 — NdotLight Stage1 재질분류에 사용)</label>
+          <label>맥락 힌트 (선택 — NdotLight Stage1 재질분류에 사용)<Tip t="이 물건이 무엇·무슨 재질인지 한 줄 힌트. 공정 비교를 위해 NdotLight 재질 분류에만 쓰이고 NVIDIA 쪽엔 주지 않습니다." /></label>
           <input value={context} onChange={(e) => setContext(e.target.value)} placeholder="예: 산업용 강철 브래킷 / 접이식 플라스틱 박스" />
-          <label>참조 이미지 (선택 · NdotLight 쪽에만 전달)</label>
+          <label>참조 이미지 (선택 · NdotLight 쪽에만 전달)<Tip t="실물 사진. NdotLight 재질 분류 정확도를 높입니다. 형상은 양쪽 동일하게 두고 NVIDIA엔 전달하지 않습니다(공정 비교)." /></label>
           <input type="file" accept="image/*" multiple onChange={(e) => setImages(Array.from(e.target.files ?? []))} />
           <p className="muted">두 물리 엔진을 모두 실행합니다 — <b>수 분</b> 소요(특히 NVIDIA 쪽 WSL 렌더). STEP/STL은 ‘형상 → USD 변환’ 카드로 먼저 USD로 바꾸세요.</p>
           <div style={{ marginTop: 12 }}>
-            <button type="submit" disabled={busy}>{busy ? "두 엔진 실행 중… (수 분)" : "물리 비교 실행"}</button>
+            <button type="submit" disabled={busy}>{busy ? "두 엔진 실행 중…" : "물리 비교 실행"}</button>
           </div>
+          <JobProgress busy={busy} onCancel={() => acRef.current?.abort()} etaSec={780} hint="NVIDIA 렌더 포함, 부품 많으면 더" />
         </form>
       </div>
 
@@ -155,8 +163,8 @@ export default function PhysicsCompare({ manifest }: WorkflowModuleProps) {
           <div className="card">
             <label>결과 USD 다운로드</label>
             <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-              {result.ndot_asset && <button className="ghost" onClick={() => downloadFile(result.ndot_asset!.download_url, result.ndot_asset!.filename)}>NdotLight 물성 USD</button>}
-              {result.nvidia_asset && <button className="ghost" onClick={() => downloadFile(result.nvidia_asset!.download_url, result.nvidia_asset!.filename)}>NVIDIA 물성 USD</button>}
+              {result.ndot_asset && <button className="ghost" onClick={() => downloadAsset(result.ndot_asset!.download_url, result.ndot_asset!.filename)}>NdotLight 물성 USD</button>}
+              {result.nvidia_asset && <button className="ghost" onClick={() => downloadAsset(result.nvidia_asset!.download_url, result.nvidia_asset!.filename)}>NVIDIA 물성 USD</button>}
               {result.nvidia_status && <span className="badge ok">{result.nvidia_status}</span>}
             </div>
           </div>
