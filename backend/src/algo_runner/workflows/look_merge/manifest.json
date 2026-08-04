@@ -1,0 +1,16 @@
+{
+  "id": "look-merge",
+  "category": "etc",
+  "order": 3,
+  "tagline": "형상 USD + 디자이너 룩 → 자기완결 단일 .usdz",
+  "name": "룩 합치기 (머티리얼 병합)",
+  "description": "형상 USD와 디자이너가 만든 룩(머티리얼 레이어)을 합쳐, 텍스처·MDL까지 한 파일에 번들된 자기완결 .usdz로 내보냅니다. 온라인(NVIDIA) MDL·텍스처는 받아서 ./ 상대경로로 묶습니다(AA.001). 룩 바인딩이 형상 경로와 맞는지도 알려줍니다.",
+  "icon": "🎨",
+  "version": "1.0.0",
+  "entry": "look-merge",
+  "requiredPermissions": [],
+  "io": {
+    "input": { "file": { "label": "형상 USD", "accept": ".usd,.usda,.usdc,.usdz", "required": true } },
+    "output": ["usd-download"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "turntable",
+  "category": "etc",
+  "order": 5,
+  "tagline": "USD → Isaac RTX 턴테이블 영상 (회전·줌·모터)",
+  "name": "턴테이블 영상 렌더",
+  "description": "USD를 올리면 Isaac Sim RTX로 360° 턴테이블 영상(mp4)을 자동 렌더합니다. 회전(바퀴수/방향/길이)은 기본, 줌(렌즈)·모터(조인트 자동 구동)는 옵션으로 켜고 끕니다. 브라우저 수동 조작·녹화 없이 업로드→옵션→자동 렌더.",
+  "icon": "🎥",
+  "version": "1.0.0",
+  "entry": "turntable",
+  "requiredPermissions": [],
+  "io": {
+    "input": { "file": { "label": "USD 파일", "accept": ".usd,.usda,.usdc,.usdz", "required": true } },
+    "output": ["video"]
+  }
+}

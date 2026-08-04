@@ -1,0 +1,27 @@
+{
+  "id": "nvidia-simready-delivery",
+  "category": "etc",
+  "order": 9,
+  "tagline": "USD → NVIDIA SimReady 납품 검증 → 실패 자동 수정 → WRAPP 패키지",
+  "name": "NVIDIA Sim-Ready Delivery",
+  "description": "USD를 NVIDIA SimReady 납품 규격으로 검증하고, 안 맞는 부분을 자동으로 고쳐 납품 패키지를 만들어 줍니다.",
+  "icon": "📦",
+  "version": "1.0.0",
+  "entry": "nvidia-simready-delivery",
+  "requiredPermissions": [],
+  "io": {
+    "input": { "file": { "label": "USD 파일 (usd/usda/usdc/usdz)", "accept": ".usd,.usda,.usdc,.usdz", "required": true } },
+    "output": ["usd-download"]
+  },
+  "pipeline": { "accepts": ["usd"], "produces": "package", "terminal": true,
+    "params": [
+      { "key": "profile", "label": "납품 프로파일", "type": "select", "default": "Prop-Robotics-Physx",
+        "options": [["Prop-Robotics-Physx", "Prop-Robotics-Physx (권장)"],
+                    ["Prop-Robotics-Neutral", "Prop-Robotics-Neutral"],
+                    ["Prop-Robotics-Isaac", "Prop-Robotics-Isaac"]] },
+      { "key": "version", "label": "프로파일 버전", "type": "select", "default": "1.0.0",
+        "options": [["1.0.0", "1.0.0 (기하 관대·권장)"], ["2.0.0", "2.0.0 (기하 엄격)"]] },
+      { "key": "license", "label": "라이선스", "type": "select", "default": "CC-BY-4.0",
+        "options": [["CC-BY-4.0", "CC-BY-4.0 (SimReady 기준)"], ["CC-BY-SA-4.0", "CC-BY-SA-4.0"], ["CC0-1.0", "CC0-1.0"]] }
+    ] }
+}

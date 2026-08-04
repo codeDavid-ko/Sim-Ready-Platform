@@ -9,3 +9,16 @@ next-env.d.ts
 *.log
 *.tsbuildinfo
 _ca_runs/
+# 테스트 입력/출력 (대용량 바이너리, 커밋 안 함). README 만 추적하려면 아래 예외 사용.
+backend/_fixtures/*
+!backend/_fixtures/README.md
+backend/_test_results/
+
+# 실행 산출물·백업·스크래치 (2026-08 정리) — 커밋 대상 아님
+backend/_sd_runs/
+backend/_backup/
+backend/_cap_test.py
+backend/_deep_test.py
+backend/_diag_test.py
+backend/_heavy_test.py
+backend/_sr_fulltest.py

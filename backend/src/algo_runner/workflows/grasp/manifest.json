@@ -1,0 +1,17 @@
+{
+  "id": "grasp",
+  "category": "etc",
+  "order": 3,
+  "tagline": "USD → AI가 파지 위치 추론 → 클릭 수정 → grasp 커브 추가",
+  "name": "그래스프 추론 (Grasp)",
+  "description": "USD를 올려 3D로 보면서, AI(Claude)가 로봇/손이 잡을 위치(두 점)를 추론합니다. 화면에서 점을 클릭해 손잡이 등 실제 파지 위치로 옮긴 뒤, NVIDIA가 인식하는 grasp_identifier_curve(BasisCurves)를 넣은 자기완결 USD로 내보냅니다.",
+  "icon": "🤏",
+  "version": "1.0.0",
+  "entry": "grasp",
+  "requiredPermissions": [],
+  "io": {
+    "input": { "file": { "label": "USD 파일", "accept": ".usd,.usda,.usdc,.usdz", "required": true } },
+    "output": ["usd-download", "viewer-glb"]
+  },
+  "pipeline": { "accepts": ["usd"], "produces": "usd_physics", "interactive": true }
+}
